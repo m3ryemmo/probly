@@ -5,7 +5,7 @@
     <meta name="color-scheme" content="light dark"><link rel="index" title="Index" href="../../../genindex.html" /><link rel="search" title="Search" href="../../../search.html" />
 
     <!-- Generated with Sphinx 8.2.3 and Furo 2024.08.06 -->
-        <title>probly.representation.representer - probly 0.3.1 documentation</title>
+        <title>probly.layers.my_flax - probly 0.3.1 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="../../../_static/styles/furo.css?v=354aac6f" />
     <link rel="stylesheet" type="text/css" href="../../../_static/mystnb.4510f1fc1dee50b3e5859aac5469c37c29e427902b24a333a5f9fcb2f0b3ac41.css" />
@@ -339,32 +339,44 @@
           </label>
         </div>
         <article role="main" id="furo-main-content">
-          <h1>Source code for probly.representation.representer</h1><div class="highlight"><pre>
-<span></span><span class="sd">&quot;&quot;&quot;Generic representation builder.&quot;&quot;&quot;</span>
+          <h1>Source code for probly.layers.my_flax</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;probly layer mit DropConnectLineaar Implementierung für Flax.&quot;&quot;&quot;</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">ABC</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">TYPE_CHECKING</span>
-
-<span class="k">if</span> <span class="n">TYPE_CHECKING</span><span class="p">:</span>
-    <span class="kn">from</span><span class="w"> </span><span class="nn">probly.predictor</span><span class="w"> </span><span class="kn">import</span> <span class="n">Predictor</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">flax</span><span class="w"> </span><span class="kn">import</span> <span class="n">nnx</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">jax</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">jax.numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">jnp</span>
 
 
-<div class="viewcode-block" id="Representer">
-<a class="viewcode-back" href="../../../api/probly.representation.representer.html#probly.representation.Representer">[docs]</a>
-<span class="k">class</span><span class="w"> </span><span class="nc">Representer</span><span class="p">[</span><span class="n">In</span><span class="p">,</span> <span class="n">KwIn</span><span class="p">,</span> <span class="n">Out</span><span class="p">](</span><span class="n">ABC</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Abstract base class for representation builders.&quot;&quot;&quot;</span>
+<div class="viewcode-block" id="DropConnectLinear">
+<a class="viewcode-back" href="../../../api/probly.layers.my_flax.html#probly.layers.my_flax.DropConnectLinear">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">DropConnectLinear</span><span class="p">(</span><span class="n">nnx</span><span class="o">.</span><span class="n">Linear</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A DropConnect Linear layer for Flax.&quot;&quot;&quot;</span>
 
-    <span class="n">predictor</span><span class="p">:</span> <span class="n">Predictor</span><span class="p">[</span><span class="n">In</span><span class="p">,</span> <span class="n">KwIn</span><span class="p">,</span> <span class="n">Out</span><span class="p">]</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">base_layer</span><span class="p">:</span> <span class="n">nnx</span><span class="o">.</span><span class="n">Linear</span><span class="p">,</span> <span class="n">p</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;A Dummy DropConnect Linear layer for Flax.&quot;&quot;&quot;</span>
+        <span class="n">dummy_rngs</span> <span class="o">=</span> <span class="n">nnx</span><span class="o">.</span><span class="n">Rngs</span><span class="p">(</span><span class="n">jax</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">key</span><span class="p">(</span><span class="mi">0</span><span class="p">))</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">predictor</span><span class="p">:</span> <span class="n">Predictor</span><span class="p">[</span><span class="n">In</span><span class="p">,</span> <span class="n">KwIn</span><span class="p">,</span> <span class="n">Out</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initialize the representer with a predictor.</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span>
+            <span class="n">in_features</span><span class="o">=</span><span class="n">base_layer</span><span class="o">.</span><span class="n">in_features</span><span class="p">,</span>
+            <span class="n">out_features</span><span class="o">=</span><span class="n">base_layer</span><span class="o">.</span><span class="n">out_features</span><span class="p">,</span>
+            <span class="n">rngs</span><span class="o">=</span><span class="n">dummy_rngs</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">p</span> <span class="o">=</span> <span class="n">p</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">base_layer</span> <span class="o">=</span> <span class="n">base_layer</span>
 
-<span class="sd">        Args:</span>
-<span class="sd">            predictor: Predictor[In, KwIn, Out], the predictor to be used for building representations.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">predictor</span> <span class="o">=</span> <span class="n">predictor</span></div>
+<div class="viewcode-block" id="DropConnectLinear.__call__">
+<a class="viewcode-back" href="../../../api/probly.layers.my_flax.html#probly.layers.my_flax.DropConnectLinear.__call__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">rngs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">jax</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">PRNGKey</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">jnp</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Forward pass with DropConnect applied to the weights.&quot;&quot;&quot;</span>
+        <span class="n">kernel</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">base_layer</span><span class="o">.</span><span class="n">kernel</span>
+        <span class="k">if</span> <span class="n">rngs</span> <span class="ow">and</span> <span class="s2">&quot;dropconnect&quot;</span> <span class="ow">in</span> <span class="n">rngs</span><span class="p">:</span>
+            <span class="n">rng</span> <span class="o">=</span> <span class="n">rngs</span><span class="p">[</span><span class="s2">&quot;dropconnect&quot;</span><span class="p">]</span>
+            <span class="n">mask</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">bernoulli</span><span class="p">(</span><span class="n">rng</span><span class="p">,</span> <span class="n">p</span><span class="o">=</span><span class="mi">1</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">p</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="n">kernel</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+            <span class="n">kernel</span> <span class="o">=</span> <span class="n">kernel</span> <span class="o">*</span> <span class="n">mask</span> <span class="o">/</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">p</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">jnp</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">kernel</span><span class="p">)</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">base_layer</span><span class="o">.</span><span class="n">bias</span></div>
+</div>
 
 </pre></div>
         </article>
