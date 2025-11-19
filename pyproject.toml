@@ -16,6 +16,7 @@ dependencies = [
     "scikit-learn",
     "tqdm",
     "joblib",
+    "mypy>=1.18.2",
 ]
 authors = [
     {name = "Paul Hofman", email = "paul.hofman@ifi.lmu.de"},
