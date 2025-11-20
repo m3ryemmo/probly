@@ -465,7 +465,7 @@ SimpleRegressionModel(
 </section>
 <section id="training-the-model">
 <h2>5. Training the Model<a class="headerlink" href="#training-the-model" title="Link to this heading">¶</a></h2>
-<p>Now we’ll train the <code class="docutils literal notranslate"><span class="pre">uncertainty_model</span></code>. We will use the $y=x^3$ benchmark example from the accompanying paper (Fig. 3) to demonstrate how the model learns to fit the data and quantify its uncertainty.</p>
+<p>Now we’ll train the <code class="docutils literal notranslate"><span class="pre">uncertainty_model</span></code>. We will use the $y=x^3$ benchmark example from the accompanying paper <a href="https://arxiv.org/abs/1910.02600" target="_blank">(Fig 3)</a> to demonstrate how the model learns to fit the data and quantify its uncertainty.</p>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
 <div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
@@ -569,7 +569,9 @@ SimpleRegressionModel(
 </div>
 <div class="cell_output docutils container">
 <div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>Starting model training...
-Epoch [0/8000], Loss: 10.1772
+</pre></div>
+</div>
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>Epoch [0/8000], Loss: 10.1772
 Epoch [2000/8000], Loss: -0.3591
 Epoch [4000/8000], Loss: -0.3770
 Epoch [6000/8000], Loss: -0.3796
