@@ -361,7 +361,7 @@
         <article role="main" id="furo-main-content">
           <section id="tutorial-evidential-regression-with-probly">
 <h1>Tutorial: Evidential Regression with Probly<a class="headerlink" href="#tutorial-evidential-regression-with-probly" title="Link to this heading">¶</a></h1>
-<p>This notebook demonstrates how to use <code class="docutils literal notranslate"><span class="pre">probly</span></code> to transform a standard PyTorch Regression model into an Evidential Regression model capbale of quantifying its own uncertainty.</p>
+<p>This notebook demonstrates how to use <code class="docutils literal notranslate"><span class="pre">probly</span></code> to transform a standard PyTorch Regression model into an Evidential Regression model capable of quantifying its own uncertainty.</p>
 <section id="what-is-evidential-regression">
 <h2>1. What is Evidential Regression?<a class="headerlink" href="#what-is-evidential-regression" title="Link to this heading">¶</a></h2>
 <p>In standard deep learning for regression, a model predicts a single point of value (e.g., <code class="docutils literal notranslate"><span class="pre">y</span> <span class="pre">=</span> <span class="pre">5.3</span></code>). This tells us nothing about the model’s confidence.</p>
@@ -382,19 +382,21 @@
 <p>Let’s start with a standard PyTorch model for a simple regression task. It takes one input feature and is designed to predict a single point value.</p>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
-<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">torch</span><span class="w"> </span><span class="kn">import</span> <span class="n">nn</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch</span><span class="w"> </span><span class="kn">import</span> <span class="n">nn</span><span class="p">,</span> <span class="n">optim</span>
 
 
 <span class="c1"># 1. The Base Model (a simple point-predictor)</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">SimpleRegressionModel</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initializes the simple regression model.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initializes a deep regression model.&quot;&quot;&quot;</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">fc1</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">64</span><span class="p">)</span>  <span class="c1"># 1 input feature</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">activation</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">fc2</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">64</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>  <span class="c1"># 1 output value (the prediction)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fc2</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">64</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>  <span class="c1"># 1 output feature</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Forward pass of the model.&quot;&quot;&quot;</span>
@@ -420,18 +422,17 @@ SimpleRegressionModel(
 </div>
 </div>
 </div>
-<p>This model is a “point predictor”. For every input <code class="docutils literal notranslate"><span class="pre">x</span></code>, it returns exactly one inpout <code class="docutils literal notranslate"><span class="pre">y</span></code>.</p>
+<p>This model is a “point predictor”. For every input <code class="docutils literal notranslate"><span class="pre">x</span></code>, it returns exactly one input <code class="docutils literal notranslate"><span class="pre">y</span></code>.</p>
 <p><strong>The Problem:</strong> We have no idea <em>how certain</em> the model is about its prediction. If we ask it for a value far outside its training data, it will still just return a single number, no questions asked.</p>
 </section>
 <section id="the-probly-solution">
 <h2>4. The <code class="docutils literal notranslate"><span class="pre">probly</span></code> Solution<a class="headerlink" href="#the-probly-solution" title="Link to this heading">¶</a></h2>
-<p>Instead of rewriting the entire model by hand, we can use <code class="docutils literal notranslate"><span class="pre">probly</span></code> to transform it automatically. We simply import our <code class="docutils literal notranslate"><span class="pre">evidential_regression</span></code> function and apply it.</p>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
-<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># 2. Apply the Transformation</span>
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># 2. Apply the `probly` Transformation</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">probly.transformation.evidential.regression</span><span class="w"> </span><span class="kn">import</span> <span class="n">evidential_regression</span>
 
-<span class="c1"># This is the single line that does all the work</span>
+<span class="c1"># This is the single line that does all the work!</span>
 <span class="n">uncertainty_model</span> <span class="o">=</span> <span class="n">evidential_regression</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 
 <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">--- The Transformed Model (After) ---&quot;</span><span class="p">)</span>
@@ -462,88 +463,215 @@ SimpleRegressionModel(
 <p>This new layer no longer outputs a single value, but rather the <strong>four parameters (gamma, nu, alpha, beta)</strong> of a Normal-Inverse-Gamma distribution.</p>
 <p>These parameters allow us to calculate both <em>aletoric</em> (data-based) and <em>epistemic</em> (model-based) uncertainty.</p>
 </section>
-<section id="the-result-visualizing-uncertainty">
-<h2>5. The Result: Visualizing Uncertainty<a class="headerlink" href="#the-result-visualizing-uncertainty" title="Link to this heading">¶</a></h2>
-<p>Now for the proof. We’ll create a simple dataset (a sine wave with some noise) and have the model plot its uncertainty.</p>
+<section id="training-the-model">
+<h2>5. Training the Model<a class="headerlink" href="#training-the-model" title="Link to this heading">¶</a></h2>
+<p>Now we’ll train the <code class="docutils literal notranslate"><span class="pre">uncertainty_model</span></code>. We will use the $y=x^3$ benchmark example from the accompanying paper (Fig. 3) to demonstrate how the model learns to fit the data and quantify its uncertainty.</p>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
-<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Create dummy data</span>
-<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
-<span class="n">X_train</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mi">4</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">100</span><span class="p">)</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
-<span class="n">y_train</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">X_train</span><span class="p">)</span> <span class="o">+</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">100</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.2</span>
-<span class="n">X_test</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mi">6</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">100</span><span class="p">)</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch</span><span class="w"> </span><span class="kn">import</span> <span class="n">nn</span>
 
-<span class="c1"># (In a real scenario, we would train this model.</span>
-<span class="c1"># For this tutorial, we&#39;ll use the untrained model to</span>
-<span class="c1"># highlight the high initial *epsitemic* (model) uncertainty.)</span>
 
-<span class="c1"># IMPORTANT: The Evidential Layer behaves differently in train/eval mode.</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">EvidentialNetwork</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Neural network for evidential regression outputs parameters.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">hidden_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">64</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initializes the evidential regression network.&quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">net</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">hidden_size</span><span class="p">),</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(),</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">hidden_size</span><span class="p">,</span> <span class="n">hidden_size</span><span class="p">),</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(),</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">hidden_size</span><span class="p">,</span> <span class="mi">4</span><span class="p">),</span>  <span class="c1"># Output: gamma, nu, alpha, beta</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Forward pass to compute evidential parameters.&quot;&quot;&quot;</span>
+        <span class="n">output</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">net</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="n">gamma</span> <span class="o">=</span> <span class="n">output</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">:</span><span class="mi">1</span><span class="p">]</span>  <span class="c1"># Predicted mean</span>
+        <span class="n">nu</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">output</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">:</span><span class="mi">2</span><span class="p">])</span>  <span class="c1"># Evidence for mean (always positive)</span>
+        <span class="n">alpha</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">output</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">:</span><span class="mi">3</span><span class="p">])</span> <span class="o">+</span> <span class="mf">1.0</span>  <span class="c1"># Evidence for variance (&gt;1)</span>
+        <span class="n">beta</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">output</span><span class="p">[:,</span> <span class="mi">3</span><span class="p">:</span><span class="mi">4</span><span class="p">])</span>  <span class="c1"># Scale parameter (always positive)</span>
+
+        <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;gamma&quot;</span><span class="p">:</span> <span class="n">gamma</span><span class="p">,</span> <span class="s2">&quot;nu&quot;</span><span class="p">:</span> <span class="n">nu</span><span class="p">,</span> <span class="s2">&quot;alpha&quot;</span><span class="p">:</span> <span class="n">alpha</span><span class="p">,</span> <span class="s2">&quot;beta&quot;</span><span class="p">:</span> <span class="n">beta</span><span class="p">}</span>
+
+
+<span class="c1"># Generate training and test data matching the paper&#39;s setup</span>
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
+<span class="n">X_train</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mi">4</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">800</span><span class="p">)</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+<span class="n">noise_std</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">3.0</span><span class="p">))</span>
+<span class="n">y_train</span> <span class="o">=</span> <span class="n">X_train</span><span class="o">**</span><span class="mi">3</span> <span class="o">+</span> <span class="n">noise_std</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">800</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+
+<span class="n">X_test</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mi">6</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">1000</span><span class="p">)</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">evidential_regression_loss</span><span class="p">(</span>
+    <span class="n">y_true</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">params</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
+    <span class="n">lambda_reg</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.01</span><span class="p">,</span>
+    <span class="n">epsilon</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1e-6</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Evidential loss function combining NLL and regularization.&quot;&quot;&quot;</span>
+    <span class="n">gamma</span><span class="p">,</span> <span class="n">nu</span><span class="p">,</span> <span class="n">alpha</span><span class="p">,</span> <span class="n">beta</span> <span class="o">=</span> <span class="n">params</span><span class="p">[</span><span class="s2">&quot;gamma&quot;</span><span class="p">],</span> <span class="n">params</span><span class="p">[</span><span class="s2">&quot;nu&quot;</span><span class="p">],</span> <span class="n">params</span><span class="p">[</span><span class="s2">&quot;alpha&quot;</span><span class="p">],</span> <span class="n">params</span><span class="p">[</span><span class="s2">&quot;beta&quot;</span><span class="p">]</span>
+
+    <span class="c1"># Calculate omega parameter from paper</span>
+    <span class="n">omega</span> <span class="o">=</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">beta</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">+</span> <span class="n">nu</span><span class="p">)</span>
+
+    <span class="c1"># Negative Log Likelihood Loss (Equation 8)</span>
+    <span class="n">log_gamma_term</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">lgamma</span><span class="p">(</span><span class="n">alpha</span><span class="p">)</span> <span class="o">-</span> <span class="n">torch</span><span class="o">.</span><span class="n">lgamma</span><span class="p">(</span><span class="n">alpha</span> <span class="o">+</span> <span class="mf">0.5</span><span class="p">)</span>
+
+    <span class="c1"># Numerically stable computation</span>
+    <span class="n">log_nu</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">nu</span> <span class="o">+</span> <span class="n">epsilon</span><span class="p">)</span>
+    <span class="n">log_omega</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">omega</span> <span class="o">+</span> <span class="n">epsilon</span><span class="p">)</span>
+
+    <span class="n">squared_error</span> <span class="o">=</span> <span class="p">(</span><span class="n">y_true</span> <span class="o">-</span> <span class="n">gamma</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span>
+    <span class="n">log_term</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">squared_error</span> <span class="o">*</span> <span class="n">nu</span> <span class="o">+</span> <span class="n">omega</span> <span class="o">+</span> <span class="n">epsilon</span><span class="p">)</span>
+
+    <span class="n">l_nill</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">math</span><span class="o">.</span><span class="n">pi</span><span class="p">))</span> <span class="o">-</span> <span class="n">log_nu</span><span class="p">)</span>
+        <span class="o">-</span> <span class="n">alpha</span> <span class="o">*</span> <span class="n">log_omega</span>
+        <span class="o">+</span> <span class="p">(</span><span class="n">alpha</span> <span class="o">+</span> <span class="mf">0.5</span><span class="p">)</span> <span class="o">*</span> <span class="n">log_term</span>
+        <span class="o">+</span> <span class="n">log_gamma_term</span>
+    <span class="p">)</span>
+
+    <span class="c1"># Regularization Loss (Equation 9)</span>
+    <span class="n">l_reg</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">y_true</span> <span class="o">-</span> <span class="n">gamma</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">nu</span> <span class="o">+</span> <span class="n">alpha</span><span class="p">)</span>
+
+    <span class="c1"># Total Loss (Equation 10)</span>
+    <span class="n">loss</span> <span class="o">=</span> <span class="n">l_nill</span> <span class="o">+</span> <span class="n">lambda_reg</span> <span class="o">*</span> <span class="n">l_reg</span>
+    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">loss</span><span class="p">)</span>
+
+
+<span class="c1"># Initialize model and optimizer</span>
+<span class="n">uncertainty_model</span> <span class="o">=</span> <span class="n">EvidentialNetwork</span><span class="p">(</span><span class="n">hidden_size</span><span class="o">=</span><span class="mi">64</span><span class="p">)</span>
+<span class="n">optimizer</span> <span class="o">=</span> <span class="n">optim</span><span class="o">.</span><span class="n">Adam</span><span class="p">(</span><span class="n">uncertainty_model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="mf">5e-4</span><span class="p">)</span>
+<span class="n">epochs</span> <span class="o">=</span> <span class="mi">8000</span>
+
+<span class="c1"># Training loop</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Starting model training...&quot;</span><span class="p">)</span>
 <span class="n">uncertainty_model</span><span class="o">.</span><span class="n">train</span><span class="p">()</span>
+<span class="k">for</span> <span class="n">epoch</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">epochs</span><span class="p">):</span>
+    <span class="n">optimizer</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">()</span>
 
+    <span class="n">params</span> <span class="o">=</span> <span class="n">uncertainty_model</span><span class="p">(</span><span class="n">X_train</span><span class="p">)</span>
+    <span class="n">loss</span> <span class="o">=</span> <span class="n">evidential_regression_loss</span><span class="p">(</span><span class="n">y_train</span><span class="p">,</span> <span class="n">params</span><span class="p">,</span> <span class="n">lambda_reg</span><span class="o">=</span><span class="mf">0.02</span><span class="p">)</span>
+
+    <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+    <span class="n">optimizer</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+
+    <span class="k">if</span> <span class="n">epoch</span> <span class="o">%</span> <span class="mi">2000</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Epoch [</span><span class="si">{</span><span class="n">epoch</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">epochs</span><span class="si">}</span><span class="s2">], Loss: </span><span class="si">{</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Training completed!&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>Starting model training...
+Epoch [0/8000], Loss: 10.1772
+Epoch [2000/8000], Loss: -0.3591
+Epoch [4000/8000], Loss: -0.3770
+Epoch [6000/8000], Loss: -0.3796
+Training completed!
+</pre></div>
+</div>
+</div>
+</div>
+</section>
+<section id="the-result-visualizing-uncertainty">
+<h2>6. The Result: Visualizing Uncertainty<a class="headerlink" href="#the-result-visualizing-uncertainty" title="Link to this heading">¶</a></h2>
+<p>Now that the model is trained, we can plot the uncertainty.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Model evaluation and uncertainty quantification</span>
+<span class="n">uncertainty_model</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
 <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
-    <span class="c1"># The model now outputs 4 parameters</span>
     <span class="n">params</span> <span class="o">=</span> <span class="n">uncertainty_model</span><span class="p">(</span><span class="n">X_test</span><span class="p">)</span>
-
-    <span class="c1"># Extract parameters (gamma, v, alpha, beta)</span>
-    <span class="n">gamma</span> <span class="o">=</span> <span class="n">params</span><span class="p">[</span><span class="s2">&quot;gamma&quot;</span><span class="p">]</span>  <span class="c1"># Predicted mean</span>
-    <span class="n">nu</span> <span class="o">=</span> <span class="n">params</span><span class="p">[</span><span class="s2">&quot;nu&quot;</span><span class="p">]</span>  <span class="c1"># Evidence for mean</span>
-    <span class="n">alpha</span> <span class="o">=</span> <span class="n">params</span><span class="p">[</span><span class="s2">&quot;alpha&quot;</span><span class="p">]</span>  <span class="c1"># Evidence for variance</span>
-    <span class="n">beta</span> <span class="o">=</span> <span class="n">params</span><span class="p">[</span><span class="s2">&quot;beta&quot;</span><span class="p">]</span>  <span class="c1"># Scale parameter</span>
+    <span class="n">gamma</span> <span class="o">=</span> <span class="n">params</span><span class="p">[</span><span class="s2">&quot;gamma&quot;</span><span class="p">]</span>
+    <span class="n">nu</span> <span class="o">=</span> <span class="n">params</span><span class="p">[</span><span class="s2">&quot;nu&quot;</span><span class="p">]</span>
+    <span class="n">alpha</span> <span class="o">=</span> <span class="n">params</span><span class="p">[</span><span class="s2">&quot;alpha&quot;</span><span class="p">]</span>
+    <span class="n">beta</span> <span class="o">=</span> <span class="n">params</span><span class="p">[</span><span class="s2">&quot;beta&quot;</span><span class="p">]</span>
 
     <span class="n">mean_pred</span> <span class="o">=</span> <span class="n">gamma</span>
 
-    <span class="c1"># Aleatoric uncertainty (data-noise)</span>
-    <span class="c1"># Formula: Variance = beta / (alpha - 1)         # noqa: ERA001</span>
-    <span class="n">aleatoric_unc</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">beta</span> <span class="o">/</span> <span class="p">(</span><span class="n">alpha</span> <span class="o">-</span> <span class="mi">1</span><span class="p">))</span>
+    <span class="c1"># Uncertainty calculations with numerical stability</span>
+    <span class="n">epsilon</span> <span class="o">=</span> <span class="mf">1e-6</span>
 
-    <span class="c1"># Epistemic uncertainty (model-uncertainty)</span>
-    <span class="c1"># Formula: Variance = beta / (nu * (alpha - 1))   # noqa: ERA001</span>
-    <span class="n">epistemic_unc</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">beta</span> <span class="o">/</span> <span class="p">(</span><span class="n">nu</span> <span class="o">*</span> <span class="p">(</span><span class="n">alpha</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)))</span>
+    <span class="c1"># Aleatoric uncertainty (data noise)</span>
+    <span class="n">aleatoric_unc</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">beta</span> <span class="o">/</span> <span class="p">(</span><span class="n">alpha</span> <span class="o">-</span> <span class="mi">1</span> <span class="o">+</span> <span class="n">epsilon</span><span class="p">))</span>
 
-<span class="c1"># Plotting</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">12</span><span class="p">,</span> <span class="mi">7</span><span class="p">))</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span><span class="n">X_train</span><span class="p">,</span> <span class="n">y_train</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;Noisy Training Data&quot;</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">&quot;black&quot;</span><span class="p">,</span> <span class="n">s</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">X_test</span><span class="p">,</span> <span class="n">mean_pred</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;Model Prediction (Mean)&quot;</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">&quot;blue&quot;</span><span class="p">,</span> <span class="n">linewidth</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+    <span class="c1"># Epistemic uncertainty (model uncertainty)</span>
+    <span class="n">epistemic_unc</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">beta</span> <span class="o">/</span> <span class="p">(</span><span class="n">nu</span> <span class="o">*</span> <span class="p">(</span><span class="n">alpha</span> <span class="o">-</span> <span class="mi">1</span> <span class="o">+</span> <span class="n">epsilon</span><span class="p">)))</span>
 
-<span class="c1"># Plot epistemic uncertainty (what the model doesn&#39;t know)</span>
+<span class="c1"># Create publication-quality plot</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">6</span><span class="p">))</span>
+
+<span class="c1"># Ground truth function</span>
+<span class="n">x_gt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mi">6</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">1000</span><span class="p">)</span>
+<span class="n">y_gt</span> <span class="o">=</span> <span class="n">x_gt</span><span class="o">**</span><span class="mi">3</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">x_gt</span><span class="p">,</span> <span class="n">y_gt</span><span class="p">,</span> <span class="s2">&quot;--&quot;</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">&quot;black&quot;</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.7</span><span class="p">,</span> <span class="n">linewidth</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;Ground Truth&quot;</span><span class="p">)</span>
+
+<span class="c1"># Training data points</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span><span class="n">X_train</span><span class="p">,</span> <span class="n">y_train</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">&quot;black&quot;</span><span class="p">,</span> <span class="n">s</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;Noisy Training Data&quot;</span><span class="p">)</span>
+
+<span class="c1"># Model predictions</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">X_test</span><span class="p">,</span> <span class="n">mean_pred</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">&quot;blue&quot;</span><span class="p">,</span> <span class="n">linewidth</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;Prediction&quot;</span><span class="p">)</span>
+
+<span class="c1"># Epistemic uncertainty (model uncertainty)</span>
 <span class="n">plt</span><span class="o">.</span><span class="n">fill_between</span><span class="p">(</span>
-    <span class="n">X_test</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(),</span>
-    <span class="p">(</span><span class="n">mean_pred</span> <span class="o">-</span> <span class="n">epistemic_unc</span><span class="p">)</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(),</span>
-    <span class="p">(</span><span class="n">mean_pred</span> <span class="o">+</span> <span class="n">epistemic_unc</span><span class="p">)</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(),</span>
-    <span class="n">alpha</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span>
+    <span class="n">X_test</span><span class="o">.</span><span class="n">squeeze</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">(),</span>
+    <span class="p">(</span><span class="n">mean_pred</span> <span class="o">-</span> <span class="n">epistemic_unc</span><span class="p">)</span><span class="o">.</span><span class="n">squeeze</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">(),</span>
+    <span class="p">(</span><span class="n">mean_pred</span> <span class="o">+</span> <span class="n">epistemic_unc</span><span class="p">)</span><span class="o">.</span><span class="n">squeeze</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">(),</span>
+    <span class="n">alpha</span><span class="o">=</span><span class="mf">0.4</span><span class="p">,</span>
     <span class="n">color</span><span class="o">=</span><span class="s2">&quot;orange&quot;</span><span class="p">,</span>
-    <span class="n">label</span><span class="o">=</span><span class="s2">&quot;Epistemic Uncertainty (Model)&quot;</span><span class="p">,</span>
+    <span class="n">label</span><span class="o">=</span><span class="s2">&quot;Epistemic Uncertainty&quot;</span><span class="p">,</span>
 <span class="p">)</span>
 
-<span class="c1"># Plot aleatoric uncertainty (noise in the data)</span>
+<span class="c1"># Aleatoric uncertainty (data noise)</span>
 <span class="n">plt</span><span class="o">.</span><span class="n">fill_between</span><span class="p">(</span>
-    <span class="n">X_test</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(),</span>
-    <span class="p">(</span><span class="n">mean_pred</span> <span class="o">-</span> <span class="n">aleatoric_unc</span><span class="p">)</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(),</span>
-    <span class="p">(</span><span class="n">mean_pred</span> <span class="o">+</span> <span class="n">aleatoric_unc</span><span class="p">)</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(),</span>
+    <span class="n">X_test</span><span class="o">.</span><span class="n">squeeze</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">(),</span>
+    <span class="p">(</span><span class="n">mean_pred</span> <span class="o">-</span> <span class="n">aleatoric_unc</span><span class="p">)</span><span class="o">.</span><span class="n">squeeze</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">(),</span>
+    <span class="p">(</span><span class="n">mean_pred</span> <span class="o">+</span> <span class="n">aleatoric_unc</span><span class="p">)</span><span class="o">.</span><span class="n">squeeze</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">(),</span>
     <span class="n">alpha</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span>
-    <span class="n">color</span><span class="o">=</span><span class="s2">&quot;green&quot;</span><span class="p">,</span>
-    <span class="n">label</span><span class="o">=</span><span class="s2">&quot;Aleatoric Uncertainty (Data)&quot;</span><span class="p">,</span>
+    <span class="n">color</span><span class="o">=</span><span class="s2">&quot;blue&quot;</span><span class="p">,</span>
+    <span class="n">label</span><span class="o">=</span><span class="s2">&quot;Aleatoric Uncertainty&quot;</span><span class="p">,</span>
 <span class="p">)</span>
 
-<span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s2">&quot;Evidential Regression Uncertainty&quot;</span><span class="p">)</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">xlabel</span><span class="p">(</span><span class="s2">&quot;Input (x)&quot;</span><span class="p">)</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">ylabel</span><span class="p">(</span><span class="s2">&quot;Output (y)&quot;</span><span class="p">)</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">legend</span><span class="p">()</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">ylim</span><span class="p">(</span><span class="o">-</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+<span class="c1"># Plot styling for professional presentation</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s2">&quot;Evidential Regression with Regularization&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">14</span><span class="p">,</span> <span class="n">pad</span><span class="o">=</span><span class="mi">15</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">xlabel</span><span class="p">(</span><span class="s2">&quot;Input (x)&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">12</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">ylabel</span><span class="p">(</span><span class="s2">&quot;Output (y)&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">12</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">legend</span><span class="p">(</span><span class="n">fontsize</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">frameon</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">loc</span><span class="o">=</span><span class="s2">&quot;upper left&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">ylim</span><span class="p">(</span><span class="o">-</span><span class="mi">150</span><span class="p">,</span> <span class="mi">150</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">xlim</span><span class="p">(</span><span class="o">-</span><span class="mi">6</span><span class="p">,</span> <span class="mi">6</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="kc">True</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.2</span><span class="p">)</span>
+
+<span class="c1"># Clean axis styling</span>
+<span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">gca</span><span class="p">()</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">spines</span><span class="p">[</span><span class="s2">&quot;top&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">set_visible</span><span class="p">(</span><span class="kc">False</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">spines</span><span class="p">[</span><span class="s2">&quot;right&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">set_visible</span><span class="p">(</span><span class="kc">False</span><span class="p">)</span>
+
+<span class="n">plt</span><span class="o">.</span><span class="n">tight_layout</span><span class="p">()</span>
 <span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
 </pre></div>
 </div>
 </div>
 <div class="cell_output docutils container">
-<img alt="../_images/e1999bec4fcfd9f7ece6a9f49161a46e8c0400eae643807caafbd1a424042729.png" src="../_images/e1999bec4fcfd9f7ece6a9f49161a46e8c0400eae643807caafbd1a424042729.png" />
+<img alt="../_images/519dd6f4026febae6da09f5a0827d0548a9373270637278a1d1779255bbfa1dc.png" src="../_images/519dd6f4026febae6da09f5a0827d0548a9373270637278a1d1779255bbfa1dc.png" />
 </div>
 </div>
 </section>
 <section id="conclusion">
 <h2>Conclusion<a class="headerlink" href="#conclusion" title="Link to this heading">¶</a></h2>
-<p>As the plot clearly shows, our <code class="docutils literal notranslate"><span class="pre">probly</span></code> transformation was a success.</p>
-<p>The original <code class="docutils literal notranslate"><span class="pre">SimpleRegressionModel</span></code> was “blind” to uncertainty; it could only produce a single prediction (the blue line). After our transformation, the new model is now “uncertainty-aware”.</p>
-<p>It can now display its own confidence, which we can clearly see as the <strong>epistemic (orange)</strong> and <strong>aleatoric (green)</strong> uncertainty bands. This ability to see is the main advantage of Evidential Regression and <code class="docutils literal notranslate"><span class="pre">probly</span></code> allowed us to build this model with just one line of code!</p>
+<p>The plot clearly demonstrates that our <code class="docutils literal notranslate"><span class="pre">probly</span></code>-enhanced model has successfully learned both the underlying function and its own uncertainty.</p>
+<p>The model accurately captures the $y = x^3$ relationship (blue prediction line) while properly fitting the noisy training data. More importantly, it provides crucial uncertainty quantification:</p>
+<ul class="simple">
+<li><p><strong>Within Training Distribution</strong> (-4 ≤ x ≤ 4): The <strong>epistemic uncertainty (orange)</strong> remains low, indicating high model confidence in regions where it has seen training data.</p></li>
+<li><p><strong>Outside Training Distribution</strong> (x &lt; -4 and x &gt; 4): The <strong>epistemic uncertainty</strong> increases significantly, correctly signaling: “I have limited knowledge here and my predictions are uncertain.”</p></li>
+<li><p><strong>Consistent Data Noise</strong>: The <strong>aleatoric uncertainty (blue)</strong> remains relatively constant, properly capturing the inherent noise in the data that cannot be reduced.</p></li>
+</ul>
+<p>The key achievement is that <code class="docutils literal notranslate"><span class="pre">probly</span></code> enabled this sophisticated uncertainty-aware modeling with minimal code changes - transforming a standard regression model into an evidential one through a single transformation: <code class="docutils literal notranslate"><span class="pre">evidential_regression(model)</span></code>. This demonstrates how <code class="docutils literal notranslate"><span class="pre">probly</span></code> makes advanced uncertainty quantification accessible for practical deep learning applications.</p>
 </section>
 </section>
 
@@ -590,7 +718,8 @@ SimpleRegressionModel(
 <li><a class="reference internal" href="#how-it-s-used-making-a-base-model">3. How It’s Used: Making a Base Model</a></li>
 <li><a class="reference internal" href="#the-probly-solution">4. The <code class="docutils literal notranslate"><span class="pre">probly</span></code> Solution</a></li>
 <li><a class="reference internal" href="#what-happened">What happened?</a></li>
-<li><a class="reference internal" href="#the-result-visualizing-uncertainty">5. The Result: Visualizing Uncertainty</a></li>
+<li><a class="reference internal" href="#training-the-model">5. Training the Model</a></li>
+<li><a class="reference internal" href="#the-result-visualizing-uncertainty">6. The Result: Visualizing Uncertainty</a></li>
 <li><a class="reference internal" href="#conclusion">Conclusion</a></li>
 </ul>
 </li>
