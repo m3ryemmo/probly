@@ -357,7 +357,7 @@
         </div>
         <article role="main" id="furo-main-content">
           <h1>Source code for probly.layers.my_flax</h1><div class="highlight"><pre>
-<span></span><span class="sd">&quot;&quot;&quot;probly layer mit DropConnectLineaar Implementierung für Flax.&quot;&quot;&quot;</span>
+<span></span><span class="sd">&quot;&quot;&quot;probly layer mit DropConnectLinear Implementierung für Flax.&quot;&quot;&quot;</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
 
@@ -372,27 +372,45 @@
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;A DropConnect Linear layer for Flax.&quot;&quot;&quot;</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">base_layer</span><span class="p">:</span> <span class="n">nnx</span><span class="o">.</span><span class="n">Linear</span><span class="p">,</span> <span class="n">p</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;A Dummy DropConnect Linear layer for Flax.&quot;&quot;&quot;</span>
-        <span class="n">dummy_rngs</span> <span class="o">=</span> <span class="n">nnx</span><span class="o">.</span><span class="n">Rngs</span><span class="p">(</span><span class="n">jax</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">key</span><span class="p">(</span><span class="mi">0</span><span class="p">))</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initializes a DropConnect Linear layer for Flax.</span>
 
+<span class="sd">        Args:</span>
+<span class="sd">            base_layer (nnx.Linear): The original linear layer from which</span>
+<span class="sd">                weights and dimensions are taken.</span>
+<span class="sd">            p (float): The dropout probability of the DropConnect layer.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span>
             <span class="n">in_features</span><span class="o">=</span><span class="n">base_layer</span><span class="o">.</span><span class="n">in_features</span><span class="p">,</span>
             <span class="n">out_features</span><span class="o">=</span><span class="n">base_layer</span><span class="o">.</span><span class="n">out_features</span><span class="p">,</span>
-            <span class="n">rngs</span><span class="o">=</span><span class="n">dummy_rngs</span><span class="p">,</span>
         <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">kernel</span> <span class="o">=</span> <span class="n">base_layer</span><span class="o">.</span><span class="n">kernel</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">bias</span> <span class="o">=</span> <span class="n">base_layer</span><span class="o">.</span><span class="n">bias</span>
+
         <span class="bp">self</span><span class="o">.</span><span class="n">p</span> <span class="o">=</span> <span class="n">p</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">base_layer</span> <span class="o">=</span> <span class="n">base_layer</span>
 
 <div class="viewcode-block" id="DropConnectLinear.__call__">
 <a class="viewcode-back" href="../../../api/probly.layers.my_flax.html#probly.layers.my_flax.DropConnectLinear.__call__">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">rngs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">jax</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">PRNGKey</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">jnp</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Forward pass with DropConnect applied to the weights.&quot;&quot;&quot;</span>
-        <span class="n">kernel</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">base_layer</span><span class="o">.</span><span class="n">kernel</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Forward pass with DropConnect applied to the weights.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            x (jnp.ndarray): Input array.</span>
+<span class="sd">            rngs (dict[str, jax.random.PRNGKey] | None): Dictionary of RNG keys.</span>
+<span class="sd">                The &#39;dropconnect&#39; key is required during training.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            jnp.ndarray: Layer output.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">kernel</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">kernel</span>
+        <span class="n">bias</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bias</span>
+
         <span class="k">if</span> <span class="n">rngs</span> <span class="ow">and</span> <span class="s2">&quot;dropconnect&quot;</span> <span class="ow">in</span> <span class="n">rngs</span><span class="p">:</span>
             <span class="n">rng</span> <span class="o">=</span> <span class="n">rngs</span><span class="p">[</span><span class="s2">&quot;dropconnect&quot;</span><span class="p">]</span>
             <span class="n">mask</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">bernoulli</span><span class="p">(</span><span class="n">rng</span><span class="p">,</span> <span class="n">p</span><span class="o">=</span><span class="mi">1</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">p</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="n">kernel</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
             <span class="n">kernel</span> <span class="o">=</span> <span class="n">kernel</span> <span class="o">*</span> <span class="n">mask</span> <span class="o">/</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">p</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">jnp</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">kernel</span><span class="p">)</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">base_layer</span><span class="o">.</span><span class="n">bias</span></div>
+
+        <span class="k">return</span> <span class="n">jnp</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">kernel</span><span class="p">)</span> <span class="o">+</span> <span class="n">bias</span></div>
 </div>
 
 </pre></div>
