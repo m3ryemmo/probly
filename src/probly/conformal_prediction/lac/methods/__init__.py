@@ -1,0 +1,1 @@
+"""LAC module for methods."""
