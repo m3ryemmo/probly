@@ -2,7 +2,22 @@
 
 from __future__ import annotations
 
+from typing import NotRequired, TypedDict, cast
+
 import numpy as np
+
+
+class SplitInfo(TypedDict):
+    """Type definition for split information dictionary."""
+
+    train_indices: NotRequired[np.ndarray]
+    cal_indices: NotRequired[np.ndarray]
+    n_training: NotRequired[int]
+    n_calibration: NotRequired[int]
+    calibration_ratio_used: NotRequired[float]
+    calibration_ratio_actual: NotRequired[float]
+    used_default: NotRequired[bool]
+    default_ratio: NotRequired[float]
 
 
 class SplitConformal:
@@ -21,8 +36,8 @@ class SplitConformal:
         """Initialize the SplitConformal class.
 
         Args:
-        calibration_ratio: ratio of data to use for calibration (set to 0.3 by default).
-        random_state: for reproducibility of random splits.
+            calibration_ratio: ratio of data to use for calibration (default: 0.3).
+            random_state: for reproducibility of random splits.
         """
         self.calibration_ratio = calibration_ratio
         self.random_state = random_state
@@ -31,7 +46,7 @@ class SplitConformal:
         self.rng = np.random.default_rng(random_state)
 
         # save info about last split
-        self.last_split_info: dict[str, object] | None = None
+        self.last_split_info: SplitInfo | None = None
 
     def split(
         self,
@@ -49,15 +64,28 @@ class SplitConformal:
         Returns:
             x_train, y_train, x_cal, y_cal
         """
-        # decide which calibration ratio to use (user friendly)
+        # decide which calibration ratio to use
         if calibration_ratio is not None:
-            # use the provided value (overrides default)
             ratio_to_use = calibration_ratio
             used_default = False
         else:
-            # use the default value
             ratio_to_use = self.calibration_ratio
             used_default = True
+
+        # validate calibration ratio
+        if not 0 < ratio_to_use < 1:
+            msg = f"calibration_ratio must be between 0 and 1 (exclusive), got {ratio_to_use}"
+            raise ValueError(msg)
+
+        # check if there are at least 2 samples
+        if len(x) < 2:
+            msg = f"Need at least 2 samples, got {len(x)}"
+            raise ValueError(msg)
+
+        # check if x and y have same length
+        if len(x) != len(y):
+            msg = f"x and y must have same length. Got x:{len(x)}, y:{len(y)}"
+            raise ValueError(msg)
 
         # make sure inputs are numpy arrays
         x = np.asarray(x)
@@ -69,14 +97,13 @@ class SplitConformal:
         indices = np.arange(n_samples)
         shuffled_indices = self.rng.permutation(indices)
 
-        # calculate split index with the correct ratio
+        # calculate split index
         split_idx = int(n_samples * (1 - ratio_to_use))
 
         # split indices
         train_indices = shuffled_indices[:split_idx]
         cal_indices = shuffled_indices[split_idx:]
 
-        # save split info
         self.last_split_info = {
             "train_indices": train_indices,
             "cal_indices": cal_indices,
@@ -88,7 +115,6 @@ class SplitConformal:
             "default_ratio": self.calibration_ratio,
         }
 
-        # give back the splits
         return (
             x[train_indices],
             y[train_indices],
@@ -96,7 +122,7 @@ class SplitConformal:
             y[cal_indices],
         )
 
-    def get_split_info(self) -> dict[str, object]:
+    def get_split_info(self) -> SplitInfo | dict[str, str]:
         """Gives information about the last split."""
         if self.last_split_info is None:
             return {"status": "no split performed yet"}
@@ -104,16 +130,18 @@ class SplitConformal:
 
     def __str__(self) -> str:
         """String representation of the class."""
-        # get split info
         info = self.get_split_info()
-        # check if no split was performed yet
+
         if "status" in info:
+            # info ist dict[str, str]
             return f"SplitConformal(ratio={self.calibration_ratio}, random_state={self.random_state})"
 
-        # split was performed, show details
-        source = "default" if info["used_default"] else "custom"
+        # info is SplitInfo
+        split_info = cast("SplitInfo", info)
+        source = "default" if split_info["used_default"] else "custom"
+
         return (
-            f"SplitConformal: {info['n_training']} Training, "
-            f"{info['n_calibration']} Calibration "
-            f"(ratio={info['calibration_ratio_used']}, {source})"
+            f"SplitConformal: {split_info['n_training']} Training, "
+            f"{split_info['n_calibration']} Calibration "
+            f"(ratio={split_info['calibration_ratio_used']}, {source})"
         )
