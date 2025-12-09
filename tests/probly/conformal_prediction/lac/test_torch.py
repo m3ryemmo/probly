@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import numpy as np
+from sklearn.datasets import load_iris
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
 import torch
+from torch import nn, optim
 
 from probly.conformal_prediction.lac.torch import LAC
 
@@ -135,3 +139,175 @@ def test_torch_randomized_stress_check() -> None:
     # Admissibility Check: Ensure no empty sets (sum of True per row >= 1)
     set_sizes = sets.sum(dim=1)
     assert not torch.any(set_sizes == 0), "Found empty sets (Accretive Completion failure)"
+
+
+def test_iris_coverage_integration() -> None:
+    """Integration Test on Iris Dataset.
+
+    Trains a real (simple) PyTorch model on Iris, calibrates LAC,
+    and checks if the empirical coverage matches the target significance level.
+    """
+    # 1. Prepare Data
+    iris = load_iris()
+    x_raw = iris.data
+    y_raw = iris.target
+
+    # Standardize features (important for Neural Nets)
+    scaler = StandardScaler()
+    x_scaled = scaler.fit_transform(x_raw)
+
+    # Convert to Tensors
+    x_tensor = torch.tensor(x_scaled, dtype=torch.float32)
+    y_tensor = torch.tensor(y_raw, dtype=torch.long)
+
+    # Split: Train (40%), Calibrate (40%), Test (20%)
+    x_train, x_temp, y_train, y_temp = train_test_split(
+        x_tensor,
+        y_tensor,
+        test_size=0.6,
+        random_state=42,
+    )
+    x_cal, x_test, y_cal, y_test = train_test_split(
+        x_temp,
+        y_temp,
+        test_size=0.33,
+        random_state=42,
+    )
+
+    # 2. Define and Train a Wrapper Model
+    class IrisModelWrapper(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.model = nn.Sequential(
+                nn.Linear(4, 16),
+                nn.ReLU(),
+                nn.Linear(16, 3),
+                nn.Softmax(dim=1),  # LAC expects probabilities
+            )
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return self.model(x)
+
+        def predict(self, x: torch.Tensor) -> torch.Tensor:
+            """Custom predict method required by LAC."""
+            self.eval()  # Setze in Evaluation Modus
+            with torch.no_grad():
+                return self.model(x)
+
+    model = IrisModelWrapper()
+
+    optimizer = optim.Adam(model.parameters(), lr=0.01)
+    criterion = nn.CrossEntropyLoss()
+
+    # Quick training loop
+    torch.manual_seed(42)
+    for _ in range(200):
+        optimizer.zero_grad()
+        output = model(x_train)
+        loss = criterion(output, y_train)
+        loss.backward()
+        optimizer.step()
+
+    # 3. Apply LAC
+    lac_predictor = LAC(model)
+
+    # Calibrate (Target: 90% coverage => alpha=0.1)
+    target_alpha = 0.1
+    lac_predictor.calibrate(x_cal, y_cal, significance_level=target_alpha)
+
+    assert lac_predictor.is_calibrated
+
+    # Predict on Test Set
+    prediction_sets = lac_predictor.predict(x_test, significance_level=target_alpha)
+
+    # 4. Verify Coverage
+    covered = prediction_sets.gather(1, y_test.unsqueeze(1)).squeeze()
+    empirical_coverage = covered.float().mean().item()
+
+    # Expectation: Coverage should be roughly 1 - alpha (0.9)
+    assert 0.8 <= empirical_coverage <= 1.0, f"Coverage on Iris too low! Expected ~0.9, got {empirical_coverage:.2f}"
+
+    # 5. Admissibility Check (Real Data)
+    set_sizes = prediction_sets.sum(dim=1)
+    assert not torch.any(set_sizes == 0), "Real data produced empty sets!"
+
+
+def test_iris_accretive_completion_active() -> None:
+    """Integration Test: Forced Accretive Completion on Iris.
+
+    Simulates a scenario where standard calibration produces empty sets
+    (by forcing an impossibly strict threshold) to verify that the
+    'Accretive Completion' fallback logic correctly activates and
+    rescues the top-1 prediction.
+    """
+    # 1. Prepare Data
+    iris = load_iris()
+    x_tensor = torch.tensor(StandardScaler().fit_transform(iris.data), dtype=torch.float32)
+    y_tensor = torch.tensor(iris.target, dtype=torch.long)
+
+    # Use stratification to ensure consistent class balance in small splits
+    x_train, x_test, y_train, y_test = train_test_split(
+        x_tensor,
+        y_tensor,
+        test_size=0.5,
+        random_state=42,
+        stratify=y_tensor,
+    )
+
+    # 2. Define and Train Model
+    class IrisModel(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            torch.manual_seed(42)
+            self.model = nn.Sequential(
+                nn.Linear(4, 16),
+                nn.ReLU(),
+                nn.Linear(16, 3),
+                nn.Softmax(dim=1),
+            )
+
+        def predict(self, x: torch.Tensor) -> torch.Tensor:
+            self.model.eval()
+            with torch.no_grad():
+                return self.model(x)
+
+    model = IrisModel()
+    optimizer = optim.Adam(model.parameters(), lr=0.01)
+    criterion = nn.CrossEntropyLoss()
+
+    # Train for 50 epochs to get meaningful probabilities
+    for _ in range(50):
+        optimizer.zero_grad()
+        output = model.model(x_train)
+        loss = criterion(output, y_train)
+        loss.backward()
+        optimizer.step()
+
+    # 3. Initialize LAC
+    predictor = LAC(model)
+    # Perform standard calibration to set internal state (is_calibrated=True)
+    predictor.calibrate(x_train, y_train, significance_level=0.1)
+
+    # 4. Force "Impossible" Threshold
+    # LAC inclusion condition: score <= threshold <=> (1 - p) <= t <=> p >= 1 - t
+    # We enforce threshold = 0.0.
+    # New condition: p >= 1.0 - 0.0 => p >= 1.0
+    # Since Softmax outputs are rarely exactly 1.0, this rejects all classes initially,
+    # creating empty prediction sets (Null Regions).
+    predictor.threshold = 0.0
+
+    # 5. Predict (Triggering Accretive Completion)
+    # The empty sets must be repaired by adding the class with the highest probability.
+    sets = predictor.predict(x_test, significance_level=0.1)
+
+    # 6. Verify Results
+    # a) Admissibility check: No empty sets allowed
+    set_sizes = sets.sum(dim=1)
+    assert not torch.any(set_sizes == 0), "Accretive completion failed to fix empty sets!"
+
+    # b) Check Set Size
+    # Since we raised the bar to 1.0, only the 'rescue' mechanism adds classes.
+    # It adds classes until the set is non-empty (typically just the top-1).
+    avg_size = set_sizes.float().mean().item()
+
+    assert avg_size == 1.0, f"Expected exactly 1 class per sample (Top-1 rescue), got avg {avg_size:.2f}"
