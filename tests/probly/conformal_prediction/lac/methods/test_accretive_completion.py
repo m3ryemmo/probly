@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import numpy as np
+from sklearn.datasets import load_iris
+from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import StandardScaler
 
-from probly.conformal_prediction.lac.methods.accretive_completion import accretive_completion
+from probly.conformal_prediction.lac.common import accretive_completion
 
 
 def test_fills_empty_set_with_max_score() -> None:
@@ -76,50 +79,99 @@ def test_mixed_batch() -> None:
 def test_randomized_large_batch() -> None:
     """Stress-Test: Generates random data to simulate a 'real' dataset scenario.
 
-    Checks if the logic holds for 100 samples and 10 classes with random values.
+    Ensures that:
+    1. Accretive completion handles large batches (100 samples) correctly.
+    2. Empty sets are filled with the class of maximum probability.
+    3. Valid sets remain strictly untouched.
     """
-    np.random.Generator(42)  # For reproducibility
+    rng = np.random.default_rng(42)
     n_samples = 100
     n_classes = 10
 
-    # 1. Random Scores (Probabilities between 0 and 1)
-    scores = np.random.Generator(n_samples, n_classes)
+    # 1. Generate Random Scores (Probabilities)
+    scores = rng.random((n_samples, n_classes))
 
-    # 2. Random Prediction Sets (Boolean)
-    # We generate sets where about 30% of rows might be empty (False)
-    pred_sets = np.random.Generator([True, False], size=(n_samples, n_classes), p=[0.3, 0.7])
+    # 2. Generate Prediction Sets
+    # Create sets where ~30% are empty/False initially to simulate high uncertainty
+    pred_sets = rng.choice([True, False], size=(n_samples, n_classes), p=[0.3, 0.7])
 
-    # We manually force the first 10 rows to be empty to GUARANTEE we have work to do
+    # Manually force the first 10 rows to be completely empty to GUARANTEE edge cases
     pred_sets[0:10, :] = False
 
-    # Keep a copy of the original sets for comparison
+    # Keep a copy for verification
     original_sets = pred_sets.copy()
 
-    # Execute the function
+    # Execute
     result = accretive_completion(pred_sets, scores)
 
-    # CHECK 1: Every row must now have at least one 'True'
+    # CHECK 1: Global Admissibility (No empty sets allowed)
     row_sums = np.sum(result, axis=1)
-    assert np.all(row_sums > 0), "Found empty sets after completion! The method failed to fix them."
+    assert np.all(row_sums > 0), "Found empty sets after completion! Admissibility violated."
 
-    # CHECK 2: Detailed verification for every row
+    # CHECK 2: Element-wise Verification
     for i in range(n_samples):
         original_row = original_sets[i]
         new_row = result[i]
 
-        if np.sum(original_row) == 0:
-            # Case A: Row was empty -> Must now include the class with the max score
-            expected_idx = np.argmax(scores[i])
-            assert new_row[expected_idx] == new_row[expected_idx], (
-                f"Row {i}: Did not pick the class with the max score."
-            )
+        is_originally_empty = np.sum(original_row) == 0
 
-            # In this simple setup, only exactly 1 element should have been added
-            assert np.sum(new_row) == 1, f"Row {i}: Should have exactly 1 True value (the completed one)."
+        if is_originally_empty:
+            # Case A: Row was empty -> Must now contain exactly the max-score class
+            expected_idx = np.argmax(scores[i])
+
+            assert new_row[expected_idx], f"Row {i}: Failed to add the class with max score."
+            assert np.sum(new_row) == 1, f"Row {i}: Added more than one class to an empty set."
         else:
-            # Case B: Row was already valid -> Must NOT have changed
+            # Case B: Row was valid -> Must be identical to original
             np.testing.assert_array_equal(
                 new_row,
                 original_row,
-                err_msg=f"Row {i}: Modified a set that was already valid!",
+                err_msg=f"Row {i}: Modified a valid set! Valid sets must be preserved.",
             )
+
+
+def test_with_iris_probabilities() -> None:
+    """Integration Scenario: Use REAL probability distributions from Iris.
+
+    This verifies logic on sharp/realistic probability distributions
+    rather than uniform random noise.
+    """
+    # 1. Prepare Real Data
+    iris = load_iris()
+    x, y = iris.data, iris.target
+
+    # Standardize to ensure LogisticRegression converges cleanly
+    scaler = StandardScaler()
+    x_scaled = scaler.fit_transform(x)
+
+    # Train a simple classifier to get realistic probabilities
+    clf = LogisticRegression(random_state=42)
+    clf.fit(x_scaled, y)
+
+    # Get scores (probabilities) for all samples
+    # The shape is (150, 3)
+    scores = clf.predict_proba(x_scaled)
+
+    # 2. Simulate "Worst Case" Calibration (Threshold = 1.0)
+    # We pass in a fully empty boolean matrix.
+    # This forces accretive_completion to pick the best class for EVERY sample.
+    empty_sets = np.zeros_like(scores, dtype=bool)
+
+    # 3. Execute
+    result = accretive_completion(empty_sets, scores)
+
+    # 4. Verify
+    # Since we started with empty sets, the result should be exactly the argmax class.
+    # This effectively turns the Conformal Predictor into a standard Classifier.
+    predicted_classes = np.argmax(result, axis=1)
+    highest_score_classes = np.argmax(scores, axis=1)
+
+    np.testing.assert_array_equal(
+        predicted_classes,
+        highest_score_classes,
+        err_msg="On Iris data, completion did not select the class with highest probability.",
+    )
+
+    # Ensure strictly 1 class per row (since we started with empty)
+    set_sizes = np.sum(result, axis=1)
+    assert np.all(set_sizes == 1), "Should have exactly 1 class per row for initially empty sets."
