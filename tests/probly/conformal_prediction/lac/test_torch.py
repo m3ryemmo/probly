@@ -14,13 +14,27 @@ PROB_TRUE_CLASS = 0.8
 EXPECTED_SCORE = 1.0 - PROB_TRUE_CLASS  # Expected non-conformity score: 0.2
 
 
-class MockTorchModel:
+class MockTorchModel(nn.Module):
     """Mock PyTorch model returning deterministic probabilities for testing."""
 
     def __init__(self, n_classes: int = 3, true_prob: float = 0.9) -> None:
         """Initialize the mock model."""
+        super().__init__()
         self.n_classes = n_classes
         self.true_prob = true_prob
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        n_samples = x.shape[0]
+        device = x.device
+
+        probs = torch.zeros(self.n_classes, device=device)
+        probs[0] = self.true_prob
+
+        if self.n_classes > 1:
+            remaining = (1.0 - self.true_prob) / (self.n_classes - 1)
+            probs[1:] = remaining
+
+        return probs.repeat(n_samples, 1)
 
     def predict(self, x: torch.Tensor) -> torch.Tensor:
         n_samples = x.shape[0]
@@ -178,21 +192,22 @@ def test_iris_coverage_integration() -> None:
     class IrisModelWrapper(nn.Module):
         def __init__(self) -> None:
             super().__init__()
-            self.model = nn.Sequential(
-                nn.Linear(4, 16),
-                nn.ReLU(),
-                nn.Linear(16, 3),
-                nn.Softmax(dim=1),  # LAC expects probabilities
-            )
+            self.linear1 = nn.Linear(4, 16)
+            self.relu = nn.ReLU()
+            self.linear2 = nn.Linear(16, 3)
+            self.softmax = nn.Softmax(dim=1)  # LAC expects probabilities
 
         def forward(self, x: torch.Tensor) -> torch.Tensor:
-            return self.model(x)
+            x = self.linear1(x)
+            x = self.relu(x)
+            x = self.linear2(x)
+            return self.softmax(x)
 
         def predict(self, x: torch.Tensor) -> torch.Tensor:
-            """Custom predict method required by LAC."""
-            self.eval()  # Setze in Evaluation Modus
+            """Predict method for compatibility with older tests."""
+            self.eval()
             with torch.no_grad():
-                return self.model(x)
+                return self.forward(x)
 
     model = IrisModelWrapper()
 
@@ -259,17 +274,22 @@ def test_iris_accretive_completion_active() -> None:
         def __init__(self) -> None:
             super().__init__()
             torch.manual_seed(42)
-            self.model = nn.Sequential(
-                nn.Linear(4, 16),
-                nn.ReLU(),
-                nn.Linear(16, 3),
-                nn.Softmax(dim=1),
-            )
+            self.linear1 = nn.Linear(4, 16)
+            self.relu = nn.ReLU()
+            self.linear2 = nn.Linear(16, 3)
+            self.softmax = nn.Softmax(dim=1)
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            x = self.linear1(x)
+            x = self.relu(x)
+            x = self.linear2(x)
+            return self.softmax(x)
 
         def predict(self, x: torch.Tensor) -> torch.Tensor:
-            self.model.eval()
+            """Predict method for compatibility."""
+            self.eval()
             with torch.no_grad():
-                return self.model(x)
+                return self.forward(x)
 
     model = IrisModel()
     optimizer = optim.Adam(model.parameters(), lr=0.01)
@@ -278,7 +298,7 @@ def test_iris_accretive_completion_active() -> None:
     # Train for 50 epochs to get meaningful probabilities
     for _ in range(50):
         optimizer.zero_grad()
-        output = model.model(x_train)
+        output = model(x_train)
         loss = criterion(output, y_train)
         loss.backward()
         optimizer.step()

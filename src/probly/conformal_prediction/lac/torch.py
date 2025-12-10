@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import torch
+from torch import nn
 
 import probly.conformal_prediction.lac.common as common_lac  # type: ignore[attr-defined]
 
@@ -15,12 +16,48 @@ if TYPE_CHECKING:
     import numpy.typing as npt
 
 
+class TorchModelWrapper:
+    """Wrapper to make PyTorch models compatible with PredictiveModel protocol."""
+
+    def __init__(self, torch_model: nn.Module) -> None:
+        """Initialize with a PyTorch model."""
+        self.torch_model = torch_model
+        self.torch_model.eval()
+
+    def predict(self, x: Sequence[Any]) -> np.ndarray:
+        """Predict method for PredictiveModel protocol."""
+        # convert input to torch tensor
+        if not isinstance(x, torch.Tensor):
+            x = torch.tensor(x, dtype=torch.float32)
+
+        with torch.no_grad():
+            # call the model
+            output = self.torch_model(x)
+
+            # convert output to numpy
+            output_np = output.detach().cpu().numpy() if isinstance(output, torch.Tensor) else np.asarray(output)
+
+            # check if output needs softmax
+            if output_np.shape[1] > 1 and (np.any(output_np > 1.0) or np.any(output_np < 0.0)):
+                # use softmax to convert logits to probabilities
+                exp_output = np.exp(output_np - np.max(output_np, axis=1, keepdims=True))
+                output_np = exp_output / exp_output.sum(axis=1, keepdims=True)
+
+            return output_np
+
+
 class LAC(common_lac.LAC):  # type: ignore[name-defined]
     """PyTorch-specific implementation of LAC.
 
     Handles automated conversion between PyTorch Tensors and Numpy arrays,
     ensuring seamless integration with PyTorch models while preserving device placement.
     """
+
+    def __init__(self, model: nn.Module) -> None:
+        """Initialize with a PyTorch model."""
+        wrapped_model = TorchModelWrapper(model)
+        super().__init__(wrapped_model)
+        self.torch_model = model
 
     def _to_numpy(self, data: object) -> npt.NDArray[np.generic]:
         """Helper: Converts Tensor (CPU/GPU) to Numpy."""
