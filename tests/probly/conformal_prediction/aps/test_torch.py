@@ -153,6 +153,99 @@ class TestAPSPredictorTorch:
 
         assert "calibrated" in str(predictor)
 
+    def test_model_forward_pass_shapes(self) -> None:
+        """Test that model forward pass produces correct shapes."""
+        # test different input sizes
+        model = SimpleNet(input_dim=5, output_dim=3)
+
+        # Test single sample
+        x_single = torch.randn(1, 5)
+        outputs_single = model(x_single)
+
+        assert isinstance(outputs_single, torch.Tensor)
+        assert outputs_single.shape == (1, 3)
+        assert outputs_single.dtype == torch.float32
+
+        # Test batch of samples
+        x_batch = torch.randn(10, 5)
+        outputs_batch = model(x_batch)
+
+        assert outputs_batch.shape == (10, 3)
+
+        # Test large batch
+        x_large = torch.randn(100, 5)
+        outputs_large = model(x_large)
+
+        assert outputs_large.shape == (100, 3)
+
+    def test_predictor_output_types_and_shapes(self, simple_model: nn.Module) -> None:
+        """Test that predictor outputs have correct types and shapes."""
+        predictor = APSPredictor(model=simple_model)
+
+        # create test data
+        rng = np.random.default_rng(42)
+        x_calib = rng.random((20, 5), dtype=np.float32)
+        y_calib = rng.integers(0, 3, size=20)
+        x_test = rng.random((5, 5), dtype=np.float32)
+
+        # calibrate
+        predictor.calibrate(x_calib, y_calib, significance=0.1)
+
+        # test predict method outputs
+        prediction_sets = predictor.predict(x_test, significance=0.1)
+
+        assert isinstance(prediction_sets, list)
+        assert len(prediction_sets) == 5
+
+        for pred_set in prediction_sets:
+            assert isinstance(pred_set, list)
+            assert all(isinstance(idx, int) for idx in pred_set)
+            assert len(pred_set) >= 1
+
+        # test prob sum to 1 through calibration scores
+        assert predictor.nonconformity_scores is not None
+        scores = predictor.nonconformity_scores
+        assert np.all(scores >= 0)
+        assert np.all(scores <= 1)
+
+    def test_nonconformity_scores_shapes(self, simple_model: nn.Module) -> None:
+        """Test that nonconformity scores have correct shapes."""
+        predictor = APSPredictor(model=simple_model)
+
+        # create test data with different sizes
+        rng = np.random.default_rng(42)
+
+        # test small dataset
+        x_small = rng.random((10, 5), dtype=np.float32)
+        y_small = rng.integers(0, 3, size=10)
+        predictor.calibrate(x_small, y_small, significance=0.1)
+
+        scores_small = predictor.nonconformity_scores
+
+        assert scores_small is not None
+        assert isinstance(scores_small, np.ndarray)
+        assert scores_small.shape == (10,)
+        assert scores_small.dtype in (np.float64, np.float32)
+        assert np.all(scores_small >= 0)
+        assert np.allclose(scores_small, np.clip(scores_small, 0, 1), rtol=1e-6)
+
+        # test larger dataset
+        x_large = rng.random((50, 5), dtype=np.float32)
+        y_large = rng.integers(0, 3, size=50)
+        predictor.calibrate(x_large, y_large, significance=0.1)
+
+        scores_large = predictor.nonconformity_scores
+
+        assert scores_large is not None
+        assert scores_large.shape == (50,)
+
+        # test single sample
+        predictor.calibrate(x_small[:1], y_small[:1], significance=0.1)
+        scores_single = predictor.nonconformity_scores
+
+        assert scores_single is not None
+        assert scores_single.shape == (1,)
+
     def test_integration_with_split_conformal(self, simple_model: nn.Module) -> None:
         """Test integration with split conformal."""
         predictor = APSPredictor(model=simple_model)
