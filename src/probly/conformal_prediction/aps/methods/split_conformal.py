@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, NotRequired, TypedDict, cast
+from typing import NotRequired, TypedDict, cast
 
 import numpy as np
 
@@ -122,7 +122,7 @@ class SplitConformal:
             y[cal_indices],
         )
 
-    def get_split_info(self) -> SplitInfo | dict[str, Any]:
+    def get_split_info(self) -> SplitInfo | dict[str, str]:
         """Gives information about the last split."""
         if self.last_split_info is None:
             return {"status": "no split performed yet"}
@@ -133,7 +133,7 @@ class SplitConformal:
         info = self.get_split_info()
 
         if "status" in info:
-            # info ist dict[str, Any]
+            # info ist dict[str, str]
             return f"SplitConformal(ratio={self.calibration_ratio}, random_state={self.random_state})"
 
         # info is SplitInfo
