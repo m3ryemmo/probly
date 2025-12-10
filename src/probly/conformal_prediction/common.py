@@ -53,38 +53,18 @@ class ConformalPredictor(ABC):
         significance_level: float,
         calibration_ratio: float = 0.3,
     ) -> tuple[npt.NDArray[Any], npt.NDArray[Any]]:
-        """Fit model and calibrate in one step using split conformal.
+        """Fit the conformal predictor using automatic data splitting.
 
-        This method:
-        1. Splits data into training and calibration sets
-        2. Calibrates the predictor with calibration data
-        3. Returns training data for model fitting
+        Performs split conformal prediction: splits data into training/calibration sets,
+        calibrates the predictor, and returns training data for model fitting.
 
         Args:
             x: Feature data
             y: Label data
-            significance_level: Significance level for calibration (e.g., 0.1)
+            significance_level: Significance level for calibration (e.g., 0.1 for 90% coverage)
             calibration_ratio: Ratio of data to use for calibration
-
         Returns:
-            Tuple of (x_train, y_train) for model training
-
-        Example:
-            ```python
-            # Create predictor
-            predictor = MyConformalPredictor(model)
-
-            # Split, calibrate, and get training data
-            x_train, y_train = predictor.fit_with_split(
-                x, y, significance_level=0.1
-            )
-
-            # Train your model with the returned data
-            model.fit(x_train, y_train)
-
-            # Now predictor is ready for predictions
-            prediction_sets = predictor.predict(x_test, significance_level=0.1)
-            ```
+            x_train, y_train: Training data for external model fitting.
         """
         # Ensure arrays
         x_array = np.asarray(x)
