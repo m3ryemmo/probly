@@ -1,4 +1,4 @@
-"""Flax implementation of APS (Adaptive Prediction Sets)."""
+"""Flax Implementation of APS (Adaptive Prediction Sets)."""
 
 from __future__ import annotations
 
