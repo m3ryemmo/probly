@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
+pytest.importorskip("flax")
+
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
