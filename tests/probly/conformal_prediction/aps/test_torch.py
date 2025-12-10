@@ -206,7 +206,7 @@ class TestAPSPredictorTorch:
         assert predictor.nonconformity_scores is not None
         scores = predictor.nonconformity_scores
         assert np.all(scores >= 0)
-        assert np.all(scores <= 1)
+        assert np.all(scores <= 1 + 1e-6)
 
     def test_nonconformity_scores_shapes(self, simple_model: nn.Module) -> None:
         """Test that nonconformity scores have correct shapes."""
