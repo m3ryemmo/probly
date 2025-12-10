@@ -18,7 +18,24 @@ from probly.conformal_prediction.lac.common import (
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    import flax.linen as nn
     import numpy.typing as npt
+
+
+class FlaxModelWrapper:
+    """Wrapper to make Flax models compatible with PredictiveModel protocol."""
+
+    def __init__(self, flax_model: nn.Module, params: dict[str, Any]) -> None:
+        """Initialize with a Flax model and its parameters."""
+        self.flax_model = flax_model
+        self.params = params
+
+    def predict(self, x: Sequence[Any]) -> np.ndarray:
+        """Predict method for PredictiveModel protocol."""
+        x_jax = jnp.asarray(x)
+        logits = self.flax_model.apply(self.params, x_jax)
+        probas_jax = jax.nn.softmax(logits, axis=-1)
+        return np.array(probas_jax, dtype=np.float32)
 
 
 class LACFlax(LAC):
@@ -34,28 +51,15 @@ class LACFlax(LAC):
             model: The Flax module (must have an 'apply' method).
             params: The frozen parameters (weights) of the model.
         """
-        super().__init__(model)
+        # Wrap the Flax model
+        wrapped_model = FlaxModelWrapper(model, params)
+        super().__init__(wrapped_model)
         self.params = params
+        self.flax_model = model
 
     def _get_probabilities(self, x: npt.NDArray[Any]) -> npt.NDArray[np.floating]:
-        """Internal method to get probabilities from the Flax model.
-
-        1. Converts input to JAX array.
-        2. Runs model.apply().
-        3. Applies Softmax (assuming model outputs logits).
-        4. Converts back to NumPy array.
-        """
-        # Convert input to JAX Array
-        x_jax = jnp.asarray(x)
-
-        # Compute logits from model
-        logits = self.model.apply(self.params, x_jax)
-
-        # Softmax for probabilities
-        probas_jax = jax.nn.softmax(logits, axis=-1)
-
-        # Back to NumPy for further processing in LAC
-        return np.array(probas_jax)
+        """Internal method to get probabilities from the Flax model."""
+        return self.model.predict(x)
 
     def predict(
         self,

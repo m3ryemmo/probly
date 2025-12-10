@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import torch
@@ -10,6 +10,8 @@ import torch
 import probly.conformal_prediction.lac.common as common_lac  # type: ignore[attr-defined]
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     import numpy.typing as npt
 
 
@@ -48,7 +50,7 @@ class LAC(common_lac.LAC):  # type: ignore[name-defined]
 
     def predict(
         self,
-        x: object,
+        x: Sequence[Any],
         significance_level: float,
     ) -> torch.Tensor:
         """Generate prediction sets for PyTorch inputs.
