@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     import flax.linen as nn
 
 import jax
+from jax import Array
 import jax.numpy as jnp
 import numpy as np
 import numpy.typing as npt
@@ -43,7 +44,7 @@ class FlaxAPS(ConformalPredictor):
                 """Convert input to probabilities."""
                 # Ensure input is float32 for JAX
                 x_array = jnp.asarray(x, dtype=jnp.float32)
-                logits = self.flax_model.apply({"params": self.flax_params}, x_array)
+                logits = cast("Array", self.flax_model.apply({"params": self.flax_params}, x_array))
                 probs = jax.nn.softmax(logits, axis=-1)
                 # Return as float32 numpy array
                 return np.asarray(probs, dtype=np.float32)
@@ -104,7 +105,7 @@ class FlaxAPS(ConformalPredictor):
         x_jax = jnp.asarray(x, dtype=jnp.float32)
 
         # Get probabilities
-        logits = self.flax_model.apply({"params": self.params}, x_jax)
+        logits = cast("Array", self.flax_model.apply({"params": self.params}, x_jax))
         probs = jax.nn.softmax(logits, axis=-1)
         probs_np = np.asarray(probs, dtype=np.float32)
 
@@ -157,10 +158,10 @@ class FlaxAPS(ConformalPredictor):
 
         @jax.jit
         def predict_fn(params: dict[str, Any], x_input: jnp.ndarray) -> jnp.ndarray:
-            logits = self.flax_model.apply({"params": params}, x_input)
+            logits = cast("Array", self.flax_model.apply({"params": params}, x_input))
             return jax.nn.softmax(logits, axis=-1)
 
-        return predict_fn(self.params, x)
+        return cast("jnp.ndarray", predict_fn(self.params, x))
 
     @staticmethod
     def initialize_model(
