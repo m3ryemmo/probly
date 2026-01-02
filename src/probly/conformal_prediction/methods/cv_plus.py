@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from probly.conformal_prediction.methods.common import PredictiveModel
 
 
-class CVPlus:
+class CrossValidationPredictor:
     """Cross-validation+ (CV+) conformal predictor."""
 
     def __init__(
@@ -56,7 +56,7 @@ class CVPlus:
             return APSScore(model)
         return LACScore(model)
 
-    def fit(self, x: Sequence[Any], y: Sequence[Any]) -> CVPlus:
+    def fit(self, x: Sequence[Any], y: Sequence[Any]) -> CrossValidationPredictor:
         """Fit CV+ conformal predictor."""
         x_array = np.asarray(x)
         y_array = np.asarray(y, dtype=int)
@@ -101,41 +101,37 @@ class CVPlus:
         x_test_array = np.asarray(x_test)
         n_test = len(x_test_array)
 
-        # infer number of classes
-        test_probs = self.models[0].predict(x_test_array[:1])
-        n_classes = test_probs.shape[1]
+        # get number of classes
+        n_classes = self.models[0].predict(x_test_array[:1]).shape[1]
 
-        # initialize prediction sets
-        all_scores = np.zeros((self.n_splits, n_test, n_classes))
         prediction_sets = np.zeros((n_test, n_classes), dtype=bool)
-
-        # calculate scores for all folds
-        for k, model in enumerate(self.models):
-            score_obj = self._get_score_object(model)
-
-            # scores for all possible labels
-            for c in range(n_classes):
-                y_cand = np.full(n_test, c, dtype=int)
-                all_scores[k, :, c] = score_obj.calibration_nonconformity(
-                    x_test_array,
-                    y_cand,
-                )
-
-        # cv+ rule
         total_cal = sum(len(s) for s in self.calibration_scores)
-        threshold = (1 - self.alpha) * (total_cal + 1)
+
+        threshold = np.floor((1 - self.alpha) * (total_cal + 1))
 
         for i in range(n_test):
             for c in range(n_classes):
-                count = sum(np.sum(s < all_scores[k, i, c]) for k, s in enumerate(self.calibration_scores))
-                if count < threshold:
+                # compute test scores for ALL models at once
+                test_scores = np.zeros(self.n_splits)
+                for k in range(self.n_splits):
+                    score_obj = self._get_score_object(self.models[k])
+                    x_respaped = x_test_array[i].reshape(1, -1)
+                    y_cand = np.array([c])
+                    test_scores[k] = score_obj.calibration_nonconformity(x_respaped, y_cand)[0]
+
+                count_greater_eq = 0
+                for k in range(self.n_splits):
+                    # compare
+                    count_greater_eq += np.sum(self.calibration_scores[k] >= test_scores[k])
+
+                count_less = total_cal - count_greater_eq
+
+                if count_less < threshold:
                     prediction_sets[i, c] = True
 
         if self.score_type == "lac":
-            avg_probs = np.mean([m.predict(x_test_array) for m in self.models], axis=0)
-
-            score_comp = 1.0 - avg_probs
-            prediction_sets = accretive_completion(prediction_sets, score_comp)
+            avg_probs = np.mean([model.predict(x_test_array) for model in self.models], axis=0)
+            prediction_sets = accretive_completion(prediction_sets, 1.0 - avg_probs)
 
         return prediction_sets
 
@@ -153,7 +149,7 @@ class CVPlus:
         sets = self.predict(x_test_array)
 
         # marginal coverage
-        marginal = np.mean([sets[np.arange(len(y_test_array)), y_test_array]])
+        marginal = np.mean(sets[np.arange(len(y_test_array)), y_test_array])
 
         # conditional coverage
         unique_labels = np.unique(y_test_array)
