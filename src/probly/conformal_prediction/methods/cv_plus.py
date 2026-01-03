@@ -12,7 +12,7 @@ from probly.conformal_prediction.scores.lac.common import LACScore, accretive_co
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
-    from probly.conformal_prediction.methods.common import PredictiveModel
+    from probly.conformal_prediction.methods.common import Predictor
 
 
 class CrossValidationPredictor:
@@ -50,7 +50,7 @@ class CrossValidationPredictor:
         self.calibration_scores: list[np.ndarray] = []
         self.fold_assignments: np.ndarray | None = None
 
-    def _get_score_object(self, model: PredictiveModel) -> LACScore | APSScore:
+    def _get_score_object(self, model: Predictor) -> LACScore | APSScore:
         """Get score object based on score_type."""
         if self.score_type == "aps":
             return APSScore(model)
