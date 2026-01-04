@@ -8,55 +8,78 @@ from .common import register
 
 
 def saps_score_torch(
-    softmaxprob: torch.Tensor,
+    probs: torch.Tensor,
     label: int,
-    rankweight: torch.Tensor | None = None,
+    lambda_val: float = 0.1,
     u: float | None = None,
 ) -> float:
     """Compute SAPS Nonconformity Score for torch tensors.
 
     Args:
-        softmaxprob: 1D tensor with softmax probabilities.
-        label: true index
-        rankweight: optional tensor with rank indices (highest probability first).
+        probs: 1D tensor with softmax probabilities.
+        label: true index.
+        lambda_val: lambda value for SAPS.
         u: optional random value in [0,1).
 
     Returns:
         float: SAPS nonconformity score.
     """
-    if softmaxprob.ndim != 1:
+    if probs.ndim == 2:
+        if probs.shape[0] != 1:
+            raise ValueError
+        probs = probs[0]
+
+    if probs.ndim != 1:
         raise ValueError
 
-    if not (0 <= label < softmaxprob.shape[0]):
+    if not (0 <= label < probs.shape[0]):
         raise ValueError
 
     if u is None:
         u = float(torch.rand(1).item())
 
-    # if given no rankweight, sort by descending probabilities
-    if rankweight is None:
-        rankweight = torch.argsort(softmaxprob, descending=True)
+    # get max probability
+    max_probs = torch.max(probs).item()
 
-    # convert label to tensor for comparison
-    label_tensor = torch.tensor(label, device=softmaxprob.device)
+    # get rank of label (1-based)
+    sorted_indices = torch.argsort(probs, descending=True)
+    rank_tensor = torch.where(sorted_indices == label)[0]
 
-    # find position of true label (0-based)
-    pos = torch.where(rankweight == label_tensor)[0]
-    if pos.numel() == 0:
+    if rank_tensor.numel() == 0:
         raise ValueError
 
-    o = int(pos[0].item()) + 1
+    # convert to 1-based rank
+    rank = int(rank_tensor[0].item()) + 1
 
-    if o == 1:
-        return u * float(softmaxprob[rankweight[0]].item())
+    if rank == 1:
+        return float(u * max_probs)
+    return float(max_probs + (rank - 2 + u) * lambda_val)
 
-    # cumulative probability of labels ranked before the true label
-    cum_prob = float(torch.sum(softmaxprob[rankweight[: o - 1]]).item())
 
-    # probability of the true label
-    pi_o = float(softmaxprob[rankweight[o - 1]].item())
+# Optional batch helper function for Torch
+def saps_score_torch_batch(
+    probs: torch.Tensor,
+    labels: torch.Tensor,
+    lambda_val: float = 0.1,
+    us: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """Batch version of SAPS Nonconformity Score for torch tensors."""
+    n_samples = probs.shape[0]
 
-    return cum_prob + (u * pi_o)
+    if us is None:
+        us = torch.rand(n_samples, device=probs.device)
+
+    scores = torch.empty(n_samples, device=probs.device, dtype=probs.dtype)
+
+    for i in range(n_samples):
+        scores[i] = saps_score_torch(
+            probs[i].unsqueeze(0),  # Keep as 2D for compatibility
+            int(labels[i].item()),
+            lambda_val=lambda_val,
+            u=float(us[i].item()),
+        )
+
+    return scores
 
 
 register(torch.Tensor, saps_score_torch)
