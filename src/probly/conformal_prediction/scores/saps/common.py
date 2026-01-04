@@ -25,10 +25,10 @@ def saps_score_func(
 ) -> float:
     """Compute SAPS Nonconformity Score.
 
-    softmaxprob: 1D-Array mit Softmax-Wahrscheinlichkeiten.
+    softmaxprob: 1D array with softmax probabilities.
     label: true index
-    rankweight: optional Array mit Rang-Indizes (höchste Wahrscheinlichkeit zuerst).
-    u: optionaler Zufallswert in [0,1).
+    rankweight: optional array with rank indices (highest probability first).
+    u: optional random value in [0,1).
     """
     if softmaxprob.ndim != 1:
         raise ValueError
