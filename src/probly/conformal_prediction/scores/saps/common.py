@@ -70,14 +70,23 @@ def saps_score_func_batch(
     if us is None:
         us = np.random.Generator(0, 1, size=n_samples)
 
-    scores = np.empty(n_samples, dtype=float)
-    for i in range(n_samples):
-        scores[i] = saps_score_func(
-            probs_np[i],
-            labels[i],
-            lambda_val=lambda_val,
-            u=us[i],
-        )
+    # Get max probabilities for each sample
+    max_probs = np.max(probs_np, axis=1)
+
+    # Get ranks for each label, argsort along axis=1 in descending order
+    sorted_indices = np.argsort(-probs_np, axis=1)
+
+    # Find the rank (1-based) of each label
+    # Compare each position in sorted_indices with the corresponding label
+    rank_mask = sorted_indices == labels[:, None]
+    ranks = np.argmax(rank_mask, axis=1) + 1  # +1 for 1-based rank
+
+    # Compute scores based on ranks
+    scores = np.where(
+        ranks == 1,
+        us * max_probs,
+        max_probs + (ranks - 2 + us) * lambda_val,
+    )
     return scores
 
 
@@ -102,14 +111,12 @@ class SAPSScore:
 
         us = self.rng.uniform(0, 1, size=len(labels_np))
 
-        scores = np.empty(len(labels_np), dtype=float)
-        for i in range(len(labels_np)):
-            scores[i] = saps_score_func(
-                probs=probs[i],
-                label=labels_np[i],
-                lambda_val=self.lambda_val,
-                u=us[i],
-            )
+        scores = saps_score_func_batch(
+            probs=probs,
+            labels=labels_np,
+            lambda_val=self.lambda_val,
+            us=us,
+        )
         return scores
 
     def predict_nonconformity(
@@ -122,16 +129,30 @@ class SAPSScore:
             probs = predict_probs(self.model, x_test)
 
         n_samples, n_classes = probs.shape
-        scores = np.empty((n_samples, n_classes), dtype=float)
 
-        for i in range(n_samples):
-            for label in range(n_classes):
-                us = self.rng.uniform(0, 1, size=n_classes)
-                scores[i, label] = saps_score_func(
-                    probs=probs[i],
-                    label=label,
-                    lambda_val=self.lambda_val,
-                    u=us[label],
-                )
+        # Create label array for all classes
+        labels_all = np.tile(np.arange(n_classes), (n_samples, 1))
 
+        # Generate random values for all samples and classes
+        us_all = self.rng.uniform(0, 1, size=(n_samples, n_classes))
+
+        # Get max probabilities for each sample (repeated for classes)
+        max_probs = np.max(probs, axis=1)
+        max_probs_expanded = max_probs[:, np.newaxis].repeat(n_classes, axis=1)
+
+        # Get ranks for all labels
+        # Argsort each sample's probabilities in descending order
+        sorted_indices = np.argsort(-probs, axis=1)
+
+        # Find ranks for all labels
+        # Compare sorted_indices with each label
+        rank_mask = sorted_indices[:, np.newaxis, :] == labels_all[:, :, np.newaxis]
+        ranks = np.argmax(rank_mask, axis=2) + 1  # +1 for 1-based rank
+
+        # Compute scores based on ranks
+        scores = np.where(
+            ranks == 1,
+            us_all * max_probs_expanded,
+            max_probs_expanded + (ranks - 2 + us_all) * self.lambda_val,
+        )
         return scores

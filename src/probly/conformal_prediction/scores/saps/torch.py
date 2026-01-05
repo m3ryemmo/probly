@@ -69,15 +69,21 @@ def saps_score_torch_batch(
     if us is None:
         us = torch.rand(n_samples, device=probs.device)
 
-    scores = torch.empty(n_samples, device=probs.device, dtype=probs.dtype)
+    max_probs = torch.max(probs, dim=1).values
 
-    for i in range(n_samples):
-        scores[i] = saps_score_torch(
-            probs[i].unsqueeze(0),  # Keep as 2D for compatibility
-            int(labels[i].item()),
-            lambda_val=lambda_val,
-            u=float(us[i].item()),
-        )
+    sorted_indices = torch.argsort(probs, dim=1, descending=True)
+
+    labels_expanded = labels.unsqueeze(1).expand(-1, probs.shape[1])
+    rank_mask = sorted_indices == labels_expanded
+
+    ranks = torch.argmax(rank_mask.float(), dim=1) + 1
+
+    # Compute scores based on ranks
+    scores = torch.where(
+        ranks == 1,
+        us * max_probs,
+        max_probs + (ranks - 2 + us) * lambda_val,
+    )
 
     return scores
 

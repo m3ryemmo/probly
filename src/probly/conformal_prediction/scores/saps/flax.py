@@ -84,19 +84,22 @@ def saps_score_jax_batch(
             key, subkey = jrandom.split(key)
             us = jrandom.uniform(subkey, shape=(n_samples,))
 
-    # Vectorized computation using vmap would be more efficient but
-    # for simplicity and consistency, we use a loop
-    def compute_for_sample(i: int) -> float:
-        return saps_score_jax(
-            probs[i : i + 1],  # Keep as 2D for compatibility
-            int(labels[i]),
-            lambda_val=lambda_val,
-            u=float(us[i]),
-            key=None,  # u is already provided
-        )
+    max_probs = jnp.max(probs, axis=1)
 
-    # Use jax.lax.map or simple list comprehension
-    scores = jnp.array([compute_for_sample(i) for i in range(n_samples)])
+    sorted_indices = jnp.argsort(-probs, axis=1)
+
+    labels_expanded = labels[:, jnp.newaxis]
+
+    rank_mask = sorted_indices == labels_expanded
+
+    ranks = jnp.argmax(rank_mask.astype(jnp.int32), axis=1) + 1
+
+    # Compute scores based on ranks
+    scores = jnp.where(
+        ranks == 1,
+        us * max_probs,
+        max_probs + (ranks - 2 + us) * lambda_val,
+    )
     return scores
 
 
