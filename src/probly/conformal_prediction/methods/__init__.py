@@ -3,4 +3,4 @@
 from probly.conformal_prediction.methods.common import predict_probs
 from probly.conformal_prediction.methods.split import SplitConformalPredictor
 
-__all__ = ["SplitConformalPredictor", "predict_probs"]
+__all__ = ["ClassConditionalPredictor", "MondrianConformalPredictor", "SplitConformalPredictor", "predict_probs"]
