@@ -68,7 +68,7 @@ def saps_score_func_batch(
     n_samples = probs_np.shape[0]
 
     if us is None:
-        us = np.random.Generator(0, 1, size=n_samples)
+        us = np.random.default_rng().random(size=n_samples)
 
     # Get max probabilities for each sample
     max_probs = np.max(probs_np, axis=1)
