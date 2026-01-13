@@ -40,7 +40,7 @@ def saps_score_func(
         raise ValueError
 
     if u is None:
-        u = float(np.random.Generator(0, 1))
+        u = float(np.random.default_rng().random())
 
     max_prob = float(np.max(probs_np))
     sorted_indices = np.argsort(-probs_np)
@@ -128,7 +128,13 @@ class SAPSScore:
         if probs is None:
             probs = predict_probs(self.model, x_test)
 
-        n_samples, n_classes = probs.shape
+        probs_np = np.asarray(probs, dtype=float)
+
+        # Ensure 2D shape
+        if probs_np.ndim == 1:
+            probs_np = probs_np.reshape(1, -1)
+
+        n_samples, n_classes = probs_np.shape
 
         # Create label array for all classes
         labels_all = np.tile(np.arange(n_classes), (n_samples, 1))
@@ -137,12 +143,12 @@ class SAPSScore:
         us_all = self.rng.uniform(0, 1, size=(n_samples, n_classes))
 
         # Get max probabilities for each sample (repeated for classes)
-        max_probs = np.max(probs, axis=1)
+        max_probs = np.max(probs_np, axis=1)
         max_probs_expanded = max_probs[:, np.newaxis].repeat(n_classes, axis=1)
 
         # Get ranks for all labels
         # Argsort each sample's probabilities in descending order
-        sorted_indices = np.argsort(-probs, axis=1)
+        sorted_indices = np.argsort(-probs_np, axis=1)
 
         # Find ranks for all labels
         # Compare sorted_indices with each label
