@@ -10,6 +10,14 @@ import numpy as np
 from .common import register
 
 
+class InvalidProbsDimensionError(ValueError):
+    """Raised when the probs array has invalid dimensions."""
+
+
+class InvalidLabelError(ValueError):
+    """Raised when the label is invalid."""
+
+
 def saps_score_jax(
     probs: Array,
     label: int,
@@ -31,18 +39,18 @@ def saps_score_jax(
     """
     if probs.ndim == 2:
         if probs.shape[0] != 1:
-            raise ValueError
+            raise InvalidProbsDimensionError
         probs = probs[0]
 
     if probs.ndim != 1:
-        raise ValueError
+        raise InvalidProbsDimensionError
 
     if not (0 <= label < probs.shape[0]):
-        raise ValueError
+        raise InvalidLabelError
 
     if u is None:
         if key is None:
-            u = float(np.random.Generator(0, 1))
+            u = float(np.random.default_rng().uniform())
         else:
             key, subkey = jrandom.split(key)
             u = float(jrandom.uniform(subkey, shape=()).item())
@@ -62,8 +70,9 @@ def saps_score_jax(
     rank = int(pos[0].item()) + 1
 
     if rank == 1:
-        return u * max_prob
-    return max_prob + (rank - 2 + u) * lambda_val
+        return float(u * max_prob)
+    # For any rank > 1, SAPS uses max_prob + lambda * (1 + u)
+    return float(max_prob + lambda_val * (1 + u))
 
 
 # Optional batch helper function for JAX
@@ -79,7 +88,7 @@ def saps_score_jax_batch(
 
     if us is None:
         if key is None:
-            us = jnp.array(np.random.Generator(0, 1, size=n_samples))
+            us = jnp.array(np.random.default_rng().uniform(size=n_samples))
         else:
             key, subkey = jrandom.split(key)
             us = jrandom.uniform(subkey, shape=(n_samples,))
@@ -98,7 +107,7 @@ def saps_score_jax_batch(
     scores = jnp.where(
         ranks == 1,
         us * max_probs,
-        max_probs + (ranks - 2 + us) * lambda_val,
+        max_probs + lambda_val * (1 + us),
     )
     return scores
 
