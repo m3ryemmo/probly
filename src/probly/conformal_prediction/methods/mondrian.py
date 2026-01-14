@@ -1,56 +1,55 @@
-"""Mondrian split conformal prediction methods."""
+"""Mondrian and Class-Conditional Conformal Prediction."""
 
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
-    from probly.conformal_prediction.scores.common import Score
+    from probly.conformal_prediction.scores.common import ClassificationScore, RegressionScore, Score
 
 import numpy as np
 import numpy.typing as npt
 import torch
 from torch import Tensor
 
-from probly.conformal_prediction.methods.common import ConformalPredictor, Predictor, predict_probs
+from probly.conformal_prediction.methods.common import (
+    ConformalClassifier,
+    ConformalPredictor,
+    ConformalRegressor,
+    Predictor,
+    predict_probs,
+)
 from probly.conformal_prediction.scores.lac.common import accretive_completion
 from probly.conformal_prediction.utils.quantile import calculate_quantile
 
-# region_func(x) -> int-array of region/group ids
+# Group functions
 RegionFunc = Callable[[Sequence[Any]], npt.NDArray[np.int_]]
+ClassFunc = Callable[[Sequence[Any], Sequence[Any] | None], npt.NDArray[np.int_]]
 
 
-class MondrianConformalPredictor(ConformalPredictor):
-    """Mondrian (region-wise) split conformal predictor for classification.
+class GroupedConformalBase(ConformalPredictor):
+    """Base class for group based conformal prediction (Mondrian & Class-Conditional).
 
-    Regions are defined by `region_func(x)`. Each region gets its own threshold.
-    This allows to enforce coverage within each region, useful when different regions
-    have different difficulty levels.
+    Groups can be regions (Mondrian) or classes (ClassConditional).
+    Shared calibrate() logic; subclasses implement predict().
     """
 
-    def __init__(
-        self,
-        model: Predictor,
-        score: Score,
-        region_func: RegionFunc,
-        use_accretive: bool = False,
-    ) -> None:
-        """Create a Mondrian split conformal predictor.
+    score: Score
+    group_func: ClassFunc
+    group_thresholds: dict[int, float]
 
-        Args:
-            model: base predictive model
-            score: nonconformity score object
-            region_func: function mapping input x to region/group ids (ints).
-            use_accretive: whether to apply accretive completion to avoid empty sets.
-        """
+    def __init__(self, model: Predictor) -> None:
+        """Initialize base conformal predictor."""
         super().__init__(model=model)
-        self.score = score
-        self.region_func = region_func
-        self.use_accretive = use_accretive
+        self.group_thresholds = {}
 
-        # region_id -> threshold
-        self.region_thresholds: dict[int, float] = {}
+    @staticmethod
+    def to_numpy(data: Any) -> npt.NDArray[np.floating]:  # noqa: ANN401
+        """Convert tensor or array-like to numpy array."""
+        if torch is not None and isinstance(data, Tensor):
+            return data.detach().cpu().numpy()
+        return np.asarray(data, dtype=float)
 
     def calibrate(
         self,
@@ -58,41 +57,71 @@ class MondrianConformalPredictor(ConformalPredictor):
         y_cal: Sequence[Any],
         alpha: float,
     ) -> float:
-        """Calibrate region-wise thresholds on a calibration dataset."""
-        # true label nonconformity scores, shape (n_cal,)
+        """Calibrate group-wise thresholds on a calibration dataset."""
+        # compute nonconformity scores
         nonconformity_scores = self.score.calibration_nonconformity(x_cal, y_cal)
+        scores_np = self.to_numpy(nonconformity_scores)
 
-        # ensure numpy array
-        if torch is not None and isinstance(nonconformity_scores, Tensor):
-            scores_np = nonconformity_scores.detach().cpu().numpy()
-        else:
-            scores_np = np.asarray(nonconformity_scores, dtype=float)
+        # get group ids for each sample
+        group_ids = self.group_func(x_cal, y_cal)
+        group_ids_np = np.asarray(group_ids, dtype=int)
 
-        # compute regions for each calibration instance
-        regions = self.region_func(x_cal)
-        regions_np = np.asarray(regions, dtype=int)
-
-        if regions_np.shape[0] != scores_np.shape[0]:
-            msg = (
-                "region_func must return one region id per calibration instance, "
-                f"got {regions_np.shape[0]} vs {scores_np.shape[0]}"
-            )
+        if group_ids_np.shape[0] != scores_np.shape[0]:
+            msg = f"Group ids and scores must have same length, got {group_ids_np.shape[0]} vs {scores_np.shape[0]}"
             raise ValueError(msg)
 
-        self.region_thresholds.clear()
-        unique_regions = np.unique(regions_np)
+        # compute threshold per group
+        self.group_thresholds = {}
+        unique_groups = np.unique(group_ids_np)
 
-        for g in unique_regions:
-            mask = regions_np == g
-            scores_g = scores_np[mask]
-            if scores_g.size == 0:
-                continue
-            # standard split-conformal quantile per region
-            self.region_thresholds[int(g)] = calculate_quantile(scores_g, alpha)
+        for group_id in unique_groups:
+            mask = group_ids_np == group_id
+            scores_in_group = scores_np[mask]
+
+            if scores_in_group.size > 0:
+                self.group_thresholds[int(group_id)] = calculate_quantile(scores_in_group, alpha)
 
         self.is_calibrated = True
-        self.threshold = None  # no single global threshold
+        self.threshold = None
         return alpha
+
+    def _get_thresholds_per_sample(
+        self,
+        group_ids_np: npt.NDArray[np.int_],
+    ) -> npt.NDArray[np.floating]:
+        """Assign threshold to each sample based on group membership."""
+        n_samples = group_ids_np.shape[0]
+        thresholds = np.empty(n_samples, dtype=float)
+
+        # use max threshold as fallback for not calibrated groups
+        if not self.group_thresholds:
+            return np.full(n_samples, np.inf)
+
+        max_threshold = max(self.group_thresholds.values())
+
+        for i, group_id in enumerate(group_ids_np):
+            thresholds[i] = self.group_thresholds.get(int(group_id), max_threshold)
+
+        return thresholds
+
+
+class MondrianConformalClassifier(GroupedConformalBase, ConformalClassifier):
+    """Mondrian (region-wise) conformal predictor for classification."""
+
+    score: ClassificationScore
+
+    def __init__(
+        self,
+        model: Predictor,
+        score: ClassificationScore,
+        region_func: RegionFunc,
+        use_accretive: bool = False,
+    ) -> None:
+        """Create Mondrian conformal predictor for classification."""
+        super().__init__(model=model)
+        self.score = score
+        self.use_accretive = use_accretive
+        self.group_func = lambda x, _y=None: region_func(x)
 
     def predict(
         self,
@@ -100,53 +129,398 @@ class MondrianConformalPredictor(ConformalPredictor):
         alpha: float,  # noqa: ARG002
         probs: Any = None,  # noqa: ANN401
     ) -> npt.NDArray[np.bool_]:
-        """Return Mondrian prediction sets as (n_instances, n_labels) bool-matrix."""
-        if not self.is_calibrated or not self.region_thresholds:
+        """Return Mondrian prediction sets."""
+        if not self.is_calibrated or not self.group_thresholds:
             msg = "Predictor must be calibrated before predict()."
             raise RuntimeError(msg)
 
-        # scores for all labels, shape (n_test, n_labels)
         scores = self.score.predict_nonconformity(x_test)
-
-        if scores.ndim != 2:
-            msg = "predict_nonconformity must return 2D-Matrix (n_instances, n_labels)."
-            raise ValueError(msg)
-
-        if torch is not None and isinstance(scores, Tensor):
-            scores_np = scores.detach().cpu().numpy()
-        else:
-            scores_np = np.asarray(scores, dtype=float)
-
+        scores_np = self.to_numpy(scores)
         n_test, _ = scores_np.shape
 
-        # compute regions for each test instance
-        regions = self.region_func(x_test)
-        regions_np = np.asarray(regions, dtype=int)
+        # get region ids for test samples
+        region_ids = self.group_func(x_test, None)
+        region_ids_np = np.asarray(region_ids, dtype=int)
 
-        if regions_np.shape[0] != n_test:
-            msg = f"region_func must return one region id per test instance, got {regions_np.shape[0]} vs {n_test}"
+        if region_ids_np.shape[0] != n_test:
+            msg = "Region ids must match test size."
             raise ValueError(msg)
 
-        # threshold per test sample: q_{region(x_i)}
-        thresholds_per_sample = np.empty(n_test, dtype=float)
-        max_threshold = max(self.region_thresholds.values())
+        # assign threshold per sample
+        thresholds_per_sample = self._get_thresholds_per_sample(region_ids_np)
+        thresholds_per_sample = thresholds_per_sample.reshape(n_test, 1)
 
-        for i, g in enumerate(regions_np):
-            g_int = int(g)
-            # fallback: if region not seen in calibration, use max threshold (most conservative)
-            thresholds_per_sample[i] = self.region_thresholds.get(g_int, max_threshold)
-
-        thresholds_per_sample = thresholds_per_sample.reshape(n_test, 1)  # (n_test, 1)
-
-        # compare scores to thresholds
-        prediction_sets = scores_np <= thresholds_per_sample  # (n_test, n_labels)
+        prediction_sets = scores_np <= thresholds_per_sample
 
         if self.use_accretive:
             if probs is None:
                 probs = predict_probs(self.model, x_test)
-            if torch is not None and isinstance(probs, Tensor):
-                probs = probs.detach().cpu().numpy()
-            probs_np = np.asarray(probs)
+            probs_np = self.to_numpy(probs)
             prediction_sets = accretive_completion(prediction_sets, probs_np)
 
         return prediction_sets
+
+
+class MondrianConformalRegressor(GroupedConformalBase, ConformalRegressor):
+    """Mondrian (region-wise) conformal predictor for regression."""
+
+    score: RegressionScore
+    group_thresholds_lower: dict[int, float]
+    group_thresholds_upper: dict[int, float]
+    is_cqr: bool
+
+    def __init__(
+        self,
+        model: Predictor,
+        score: RegressionScore,
+        region_func: RegionFunc,
+    ) -> None:
+        """Create Mondrian conformal predictor for regression."""
+        super().__init__(model=model)
+        self.score = score
+        self.group_func = lambda x, _y=None: region_func(x)
+        self.group_thresholds_lower = {}
+        self.group_thresholds_upper = {}
+        self.is_asymmetric = False
+
+    def calibrate(
+        self,
+        x_cal: Sequence[Any],
+        y_cal: Sequence[Any],
+        alpha: float,
+    ) -> float:
+        """Calibrate thresholds per region."""
+        nonconformity_scores = self.score.calibration_nonconformity(x_cal, y_cal)
+        scores_np = self.to_numpy(nonconformity_scores)
+
+        regions = self.group_func(x_cal, y_cal)
+        regions_np = np.asarray(regions, dtype=int)
+
+        if regions_np.shape[0] != scores_np.shape[0]:
+            msg = "Region ids and scores must have same length."
+            raise ValueError(msg)
+
+        # determine if symmetric or asymmetric thresholds
+        if scores_np.ndim == 1 or (scores_np.ndim == 2 and scores_np.shape[1] == 1):
+            # standard: one threshold per region (symmetric)
+            self.is_asymmetric = False
+            scores_flat = scores_np.flatten()
+            self.group_thresholds = {}
+            unique_regions = np.unique(regions_np)
+
+            for region_id in unique_regions:
+                region_mask = regions_np == region_id
+                scores_in_region = scores_flat[region_mask]
+
+                if scores_in_region.size > 0:
+                    self.group_thresholds[int(region_id)] = calculate_quantile(scores_in_region, alpha)
+
+        elif scores_np.ndim == 2 and scores_np.shape[1] == 2:
+            # asymmetric: two thresholds per region (CQR)
+            self.is_asymmetric = True
+            self.group_thresholds_lower = {}
+            self.group_thresholds_upper = {}
+
+            unique_regions = np.unique(regions_np)
+            alpha_lower = alpha / 2
+            alpha_upper = 1 - alpha / 2
+
+            for region_id in unique_regions:
+                region_mask = regions_np == region_id
+
+                scores_lower = scores_np[region_mask, 0]
+                scores_upper = scores_np[region_mask, 1]
+
+                if scores_lower.size > 0:
+                    self.group_thresholds_lower[int(region_id)] = calculate_quantile(scores_lower, alpha_lower)
+                    self.group_thresholds_upper[int(region_id)] = calculate_quantile(scores_upper, alpha_upper)
+        else:
+            msg = f"Score shape {scores_np.shape} not supported."
+            raise ValueError(msg)
+
+        self.is_calibrated = True
+        return alpha
+
+    def _get_thresholds_per_sample_asym(
+        self,
+        region_ids_np: npt.NDArray[np.int_],
+    ) -> tuple[npt.NDArray[np.floating], npt.NDArray[np.floating]]:
+        """Assign asymmetric thresholds (lower/upper) per sample."""
+        n_samples = region_ids_np.shape[0]
+        threshold_lower = np.empty(n_samples, dtype=float)
+        threshold_upper = np.empty(n_samples, dtype=float)
+
+        max_lower = max(self.group_thresholds_lower.values()) if self.group_thresholds_lower else np.inf
+        max_upper = max(self.group_thresholds_upper.values()) if self.group_thresholds_upper else np.inf
+
+        for i, region_id in enumerate(region_ids_np):
+            region_id_int = int(region_id)
+            threshold_lower[i] = self.group_thresholds_lower.get(region_id_int, max_lower)
+            threshold_upper[i] = self.group_thresholds_upper.get(region_id_int, max_upper)
+
+        return threshold_lower, threshold_upper
+
+    def predict(
+        self,
+        x_test: Sequence[Any],
+        alpha: float,  # noqa: ARG002
+    ) -> npt.NDArray[np.floating]:
+        """Return Mondrian prediction intervals."""
+        if not self.is_calibrated:
+            msg = "Predictor must be calibrated before predict()."
+            raise RuntimeError(msg)
+
+        y_hat = self.model(x_test)
+        y_hat_np = self.to_numpy(y_hat)
+
+        if self.is_asymmetric:
+            if y_hat_np.ndim != 2 or y_hat_np.shape[1] != 2:
+                msg = "Asymmetric intervals expect model output shape (N, 2)."
+                raise ValueError(msg)
+
+            region_ids = self.group_func(x_test, None)
+            region_ids_np = np.asarray(region_ids, dtype=int)
+
+            if not self.group_thresholds_lower or not self.group_thresholds_upper:
+                msg = "Asymmetric thresholds not calibrated."
+                raise RuntimeError(msg)
+
+            threshold_lower, threshold_upper = self._get_thresholds_per_sample_asym(region_ids_np)
+
+            lower = y_hat_np[:, 0] - threshold_lower
+            upper = y_hat_np[:, 1] + threshold_upper
+        else:
+            y_hat_flat = y_hat_np.flatten()
+
+            region_ids = self.group_func(x_test, None)
+            region_ids_np = np.asarray(region_ids, dtype=int)
+
+            if not self.group_thresholds:
+                msg = "Standard threshold is not calibrated."
+                raise RuntimeError(msg)
+
+            thresholds = self._get_thresholds_per_sample(region_ids_np)
+            lower = y_hat_flat - thresholds
+            upper = y_hat_flat + thresholds
+
+        return cast("npt.NDArray[np.floating]", np.stack([lower, upper], axis=1))
+
+
+class ClassConditionalClassifier(GroupedConformalBase, ConformalClassifier):
+    """Class conditional conformal predictor for classification."""
+
+    score: ClassificationScore
+
+    def __init__(
+        self,
+        model: Predictor,
+        score: ClassificationScore,
+        class_func: ClassFunc,
+        use_accretive: bool = False,
+    ) -> None:
+        """Create class conditional conformal predictor for classification."""
+        super().__init__(model=model)
+        self.score = score
+        self.use_accretive = use_accretive
+        self.group_func = class_func
+
+    def predict(
+        self,
+        x_test: Sequence[Any],
+        alpha: float,  # noqa: ARG002
+        probs: Any = None,  # noqa: ANN401
+    ) -> npt.NDArray[np.bool_]:
+        """Return class-conditional prediction sets."""
+        if not self.is_calibrated or not self.group_thresholds:
+            msg = "Predictor must be calibrated before predict()."
+            raise RuntimeError(msg)
+
+        scores = self.score.predict_nonconformity(x_test)
+        if scores.ndim != 2:
+            msg = "predict_nonconformity must return 2D-Matrix."
+            raise ValueError(msg)
+
+        scores_np = self.to_numpy(scores)
+        n_labels = scores_np.shape[1]
+
+        # get class ids for test samples
+        thresholds_array = np.full(n_labels, np.inf, dtype=float)
+        for class_id, threshold in self.group_thresholds.items():
+            thresholds_array[int(class_id)] = threshold
+
+        thresholds = thresholds_array[None, :]
+        prediction_sets = scores_np <= thresholds
+
+        if self.use_accretive:
+            if probs is None:
+                probs = predict_probs(self.model, x_test)
+            probs_np = self.to_numpy(probs)
+            prediction_sets = accretive_completion(prediction_sets, probs_np)
+
+        return prediction_sets
+
+
+class ClassConditionalRegressor(GroupedConformalBase, ConformalRegressor):
+    """Class-conditional conformal predictor for regression."""
+
+    score: RegressionScore
+    group_thresholds_lower: dict[int, float]
+    group_thresholds_upper: dict[int, float]
+    is_cqr: bool
+
+    def __init__(
+        self,
+        model: Predictor,
+        score: RegressionScore,
+        class_func: ClassFunc,
+    ) -> None:
+        """Create class conditional conformal predictor for regression."""
+        super().__init__(model=model)
+        self.score = score
+        self.group_func = class_func
+        self.group_thresholds_lower = {}
+        self.group_thresholds_upper = {}
+        self.is_asymmetric = False
+
+    def get_thresholds_per_sample(self, class_ids_np: npt.NDArray[np.int_]) -> npt.NDArray[np.floating]:
+        """Assign symmetric threshold per sample."""
+        n_samples = class_ids_np.shape[0]
+        thresholds = np.empty(n_samples, dtype=float)
+        max_threshold = max(self.group_thresholds.values()) if self.group_thresholds else np.inf
+
+        # get class ids for test samples
+        for i, class_id in enumerate(class_ids_np):
+            thresholds[i] = self.group_thresholds.get(int(class_id), max_threshold)
+        return thresholds
+
+    def calibrate(
+        self,
+        x_cal: Sequence[Any],
+        y_cal: Sequence[Any],
+        alpha: float,
+    ) -> float:
+        """Calibrate thresholds per class."""
+        nonconformity_scores = self.score.calibration_nonconformity(x_cal, y_cal)
+        scores_np = self.to_numpy(nonconformity_scores)
+        class_ids = self.group_func(x_cal, y_cal)
+        class_ids_np = np.asarray(class_ids, dtype=int)
+
+        if class_ids_np.shape[0] != scores_np.shape[0]:
+            msg = "Class ids and scores must have same length."
+            raise ValueError(msg)
+
+        # determine if symmetric or asymmetric thresholds
+        if scores_np.ndim == 1 or (scores_np.ndim == 2 and scores_np.shape[1] == 1):
+            # standard: one threshold per class (symmetric)
+            self.is_asymmetric = False
+            scores_flat = scores_np.flatten()
+            self.group_thresholds = {}
+            unique_classes = np.unique(class_ids_np)
+
+            # get class ids for calibration samples
+            for class_id in unique_classes:
+                class_mask = class_ids_np == class_id
+                scores_in_class = scores_flat[class_mask]
+
+                if scores_in_class.size > 0:
+                    self.group_thresholds[int(class_id)] = calculate_quantile(scores_in_class, alpha)
+
+        elif scores_np.ndim == 2 and scores_np.shape[1] == 2:
+            # asymmetric: two thresholds per class (CQR)
+            self.is_asymmetric = True
+            self.group_thresholds_lower = {}
+            self.group_thresholds_upper = {}
+
+            unique_classes = np.unique(class_ids_np)
+            alpha_lower = alpha / 2
+            alpha_upper = 1 - alpha / 2
+
+            # get class ids for calibration samples
+            for class_id in unique_classes:
+                class_mask = class_ids_np == class_id
+                scores_lower = scores_np[class_mask, 0]
+                scores_upper = scores_np[class_mask, 1]
+
+                if scores_lower.size > 0:
+                    self.group_thresholds_lower[int(class_id)] = calculate_quantile(scores_lower, alpha_lower)
+                    self.group_thresholds_upper[int(class_id)] = calculate_quantile(scores_upper, alpha_upper)
+        else:
+            msg = f"Score shape {scores_np.shape} not supported."
+            raise ValueError(msg)
+
+        self.is_calibrated = True
+        return alpha
+
+    def get_thresholds_per_sample_asym(
+        self,
+        class_ids_np: npt.NDArray[np.int_],
+    ) -> tuple[npt.NDArray[np.floating], npt.NDArray[np.floating]]:
+        """Assign asymmetric thresholds (lower/upper) per sample."""
+        n_samples = class_ids_np.shape[0]
+        threshold_lower = np.empty(n_samples, dtype=float)
+        threshold_upper = np.empty(n_samples, dtype=float)
+
+        max_lower = max(self.group_thresholds_lower.values()) if self.group_thresholds_lower else np.inf
+        max_upper = max(self.group_thresholds_upper.values()) if self.group_thresholds_upper else np.inf
+
+        # get class ids for test samples
+        for i, class_id in enumerate(class_ids_np):
+            class_id_int = int(class_id)
+            threshold_lower[i] = self.group_thresholds_lower.get(class_id_int, max_lower)
+            threshold_upper[i] = self.group_thresholds_upper.get(class_id_int, max_upper)
+
+        return threshold_lower, threshold_upper
+
+    def predict(
+        self,
+        x_test: Sequence[Any],
+        alpha: float,  # noqa: ARG002
+    ) -> npt.NDArray[np.floating]:
+        """Return class-conditional intervals."""
+        if not self.is_calibrated:
+            msg = "Predictor must be calibrated before predict()."
+            raise RuntimeError(msg)
+
+        y_hat = self.model(x_test)
+        y_hat_np = self.to_numpy(y_hat)
+
+        if self.is_asymmetric:
+            if y_hat_np.ndim != 2 or y_hat_np.shape[1] != 2:
+                msg = "Asymmetric intervals expect model output shape (N, 2)."
+                raise ValueError(msg)
+
+            n_test = y_hat_np.shape[0]
+            class_ids = self.group_func(x_test, None)
+            class_ids_np = np.asarray(class_ids, dtype=int)
+
+            if class_ids_np.shape[0] != n_test:
+                msg = "Class ids must match test size."
+                raise ValueError(msg)
+
+            if not self.group_thresholds_lower or not self.group_thresholds_upper:
+                msg = "Asymmetric thresholds not calibrated."
+                raise RuntimeError(msg)
+
+            threshold_lower, threshold_upper = self.get_thresholds_per_sample_asym(class_ids_np)
+
+            lower = y_hat_np[:, 0] - threshold_lower
+            upper = y_hat_np[:, 1] + threshold_upper
+        else:
+            y_hat_flat = y_hat_np.flatten()
+            n_test = y_hat_flat.shape[0]
+            class_ids = self.group_func(x_test, None)
+            class_ids_np = np.asarray(class_ids, dtype=int)
+
+            if class_ids_np.shape[0] != n_test:
+                msg = "Class ids must match test size."
+                raise ValueError(msg)
+
+            if not self.group_thresholds:
+                msg = "Standard thresholds not calibrated."
+                raise RuntimeError(msg)
+
+            thresholds = self.get_thresholds_per_sample(class_ids_np)
+            lower = y_hat_flat - thresholds
+            upper = y_hat_flat + thresholds
+
+        return cast("npt.NDArray[np.floating]", np.stack([lower, upper], axis=1))
