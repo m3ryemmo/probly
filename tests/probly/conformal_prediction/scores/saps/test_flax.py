@@ -4,14 +4,110 @@ from __future__ import annotations
 
 from typing import Any
 
+from flax import nnx
+from flax.core import FrozenDict
+import jax
 import jax.numpy as jnp
 import jax.random as jrandom
+import numpy as np
 import pytest
+from sklearn.datasets import load_iris
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
 
+from probly.conformal_prediction.methods.split import SplitConformalPredictor
+from probly.conformal_prediction.scores.saps import SAPSScore
 from probly.conformal_prediction.scores.saps.flax import (
     saps_score_jax,
     saps_score_jax_batch,
 )
+
+
+class IrisFlaxModel(nnx.Module):
+    def __init__(self) -> None:
+        """Simple Flax model for Iris dataset."""
+        self.dense1 = nnx.Linear(4, 8, rngs=nnx.Rngs(42))
+        self.dense2 = nnx.Linear(8, 3, rngs=nnx.Rngs(42))
+
+    def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
+        x = self.dense1(x)
+        x = jax.nn.relu(x)
+        x = self.dense2(x)
+        return x
+
+
+class FlaxPredictor:
+    def __init__(self, model: nnx.Module, params: FrozenDict) -> None:
+        """Flax Predictor wrapper."""
+        self.model = model
+        self.params = params
+
+    def __call__(self, x: Any) -> jnp.ndarray:  # noqa: ANN401
+        x = jnp.asarray(x, dtype=jnp.float32)
+        logits = self.model(x)
+        return jax.nn.softmax(logits, axis=-1)
+
+    def predict(self, x: Any) -> jnp.ndarray:  # noqa: ANN401
+        return self(x)
+
+
+def test_saps_with_iris_dataset() -> None:
+    iris = load_iris()
+    x, y = iris.data, iris.target
+
+    # split
+    x_temp, x_test, y_temp, y_test = train_test_split(
+        x,
+        y,
+        test_size=0.2,
+        random_state=42,
+        stratify=y,
+    )
+
+    x_train, x_calib, y_train, y_calib = train_test_split(
+        x_temp,
+        y_temp,
+        test_size=0.25,
+        random_state=42,
+        stratify=y_temp,
+    )
+
+    # scale
+    scaler = StandardScaler()
+    x_calib = scaler.fit_transform(x_calib).astype(np.float32)
+    x_test = scaler.transform(x_test).astype(np.float32)
+
+    # model + predictor
+    model = IrisFlaxModel()
+    predictor = FlaxPredictor(model, FrozenDict())
+
+    # SAPS score
+    score = SAPSScore(
+        model=predictor,
+        random_state=42,
+    )
+
+    conformal = SplitConformalPredictor(
+        model=predictor,
+        score=score,
+    )
+
+    # calibrate
+    conformal.calibrate(x_calib, y_calib, alpha=0.1)
+    assert conformal.is_calibrated
+
+    # predict
+    prediction_sets = conformal.predict(x_test, alpha=0.1)
+
+    assert prediction_sets.shape == (len(x_test), 3)
+    assert prediction_sets.dtype == bool
+
+    # coverage
+    coverage = np.mean(
+        [prediction_sets[i, y_test[i]] for i in range(len(y_test))],
+    )
+
+    assert coverage >= 0.85
 
 
 class SAPSFlaxTestModel:
