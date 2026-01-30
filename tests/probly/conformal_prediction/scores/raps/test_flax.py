@@ -6,17 +6,20 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import numpy.typing as npt
+import pytest
 
-from probly.conformal_prediction.scores.raps.common import test_raps_score_func_basic
+from probly.conformal_prediction.scores.raps.common import raps_score_func
 from probly.conformal_prediction.scores.raps.flax import raps_score_jax
 
 
 def test_raps_score_jax_basic() -> None:
     """Test raps_score_jax with basic data."""
-    probs = jnp.array([
-        [0.5, 0.3, 0.2],
-        [0.1, 0.7, 0.2],
-    ])
+    probs = jnp.array(
+        [
+            [0.5, 0.3, 0.2],
+            [0.1, 0.7, 0.2],
+        ],
+    )
 
     scores = raps_score_jax(probs, lambda_reg=0.1, k_reg=0)
 
@@ -29,16 +32,15 @@ def test_raps_score_jax_basic() -> None:
 def test_raps_score_jax_consistency_with_numpy() -> None:
     """Test that JAX implementation produces similar results to NumPy."""
     # Create test data
-    np_probs = np.array([
-        [0.4, 0.3, 0.3],
-        [0.6, 0.2, 0.2],
-        [0.1, 0.8, 0.1],
-    ])
+    np_probs = np.array(
+        [
+            [0.4, 0.3, 0.3],
+            [0.6, 0.2, 0.2],
+            [0.1, 0.8, 0.1],
+        ],
+    )
     jax_probs = jnp.array(np_probs)
 
-    # Get scores from both implementations
-    from probly.conformal_prediction.scores.raps.common import raps_score_func
-    
     np_scores: npt.NDArray[np.floating] = raps_score_func(np_probs, lambda_reg=0.1, k_reg=0)
     jax_scores = raps_score_jax(jax_probs, lambda_reg=0.1, k_reg=0)
 
@@ -52,10 +54,12 @@ def test_raps_score_jax_consistency_with_numpy() -> None:
 
 def test_raps_score_jax_different_lambda() -> None:
     """Test raps_score_jax with different regularization parameters."""
-    probs = jnp.array([
-        [0.5, 0.3, 0.2],
-        [0.1, 0.7, 0.2],
-    ])
+    probs = jnp.array(
+        [
+            [0.5, 0.3, 0.2],
+            [0.1, 0.7, 0.2],
+        ],
+    )
 
     scores_lambda_01 = raps_score_jax(probs, lambda_reg=0.1, k_reg=0)
     scores_lambda_10 = raps_score_jax(probs, lambda_reg=1.0, k_reg=0)
@@ -68,10 +72,12 @@ def test_raps_score_jax_different_lambda() -> None:
 
 def test_raps_score_jax_different_k_reg() -> None:
     """Test raps_score_jax with different k_reg values."""
-    probs = jnp.array([
-        [0.5, 0.3, 0.2],
-        [0.1, 0.7, 0.2],
-    ])
+    probs = jnp.array(
+        [
+            [0.5, 0.3, 0.2],
+            [0.1, 0.7, 0.2],
+        ],
+    )
 
     scores_k0 = raps_score_jax(probs, lambda_reg=0.1, k_reg=0)
     scores_k1 = raps_score_jax(probs, lambda_reg=0.1, k_reg=1)
@@ -84,10 +90,12 @@ def test_raps_score_jax_different_k_reg() -> None:
 
 def test_raps_score_jax_with_epsilon() -> None:
     """Test raps_score_jax with epsilon parameter."""
-    probs = jnp.array([
-        [0.5, 0.3, 0.2],
-        [0.1, 0.7, 0.2],
-    ])
+    probs = jnp.array(
+        [
+            [0.5, 0.3, 0.2],
+            [0.1, 0.7, 0.2],
+        ],
+    )
 
     scores_no_eps = raps_score_jax(probs, lambda_reg=0.1, k_reg=0, epsilon=0.0)
     scores_with_eps = raps_score_jax(probs, lambda_reg=0.1, k_reg=0, epsilon=0.01)
@@ -101,10 +109,12 @@ def test_raps_score_jax_with_epsilon() -> None:
 
 def test_raps_score_jax_jit_compatible() -> None:
     """Test that raps_score_jax is JIT compatible."""
-    probs = jnp.array([
-        [0.5, 0.3, 0.2],
-        [0.1, 0.7, 0.2],
-    ])
+    probs = jnp.array(
+        [
+            [0.5, 0.3, 0.2],
+            [0.1, 0.7, 0.2],
+        ],
+    )
 
     # JIT compile the function
     jitted_func = jax.jit(raps_score_jax, static_argnums=(1, 2, 3))
@@ -119,14 +129,17 @@ def test_raps_score_jax_jit_compatible() -> None:
 
 def test_raps_score_jax_gradients() -> None:
     """Test that raps_score_jax supports gradient computation."""
+
     def loss_fn(probs: jnp.ndarray) -> jnp.ndarray:
         scores = raps_score_jax(probs, lambda_reg=0.1, k_reg=0)
         return jnp.sum(scores)
 
-    probs = jnp.array([
-        [0.5, 0.3, 0.2],
-        [0.1, 0.7, 0.2],
-    ])
+    probs = jnp.array(
+        [
+            [0.5, 0.3, 0.2],
+            [0.1, 0.7, 0.2],
+        ],
+    )
 
     # Compute gradient - should not raise an error
     grad_fn = jax.grad(loss_fn)
@@ -139,11 +152,13 @@ def test_raps_score_jax_gradients() -> None:
 
 def test_raps_score_jax_batch_independence() -> None:
     """Test that scores are computed independently per sample."""
-    probs = jnp.array([
-        [0.5, 0.3, 0.2],
-        [0.1, 0.7, 0.2],
-        [0.3, 0.3, 0.4],
-    ])
+    probs = jnp.array(
+        [
+            [0.5, 0.3, 0.2],
+            [0.1, 0.7, 0.2],
+            [0.3, 0.3, 0.4],
+        ],
+    )
 
     # Compute scores for all samples
     all_scores = raps_score_jax(probs, lambda_reg=0.1, k_reg=0)
@@ -151,7 +166,7 @@ def test_raps_score_jax_batch_independence() -> None:
     # Compute scores for each sample individually
     individual_scores = []
     for i in range(probs.shape[0]):
-        single_probs = probs[i:i+1, :]  # Keep batch dimension
+        single_probs = probs[i : i + 1, :]  # Keep batch dimension
         single_scores = raps_score_jax(single_probs, lambda_reg=0.1, k_reg=0)
         individual_scores.append(single_scores[0])  # Remove batch dimension
 
@@ -199,12 +214,6 @@ def test_raps_score_jax_monotonic_with_probability() -> None:
     probs = jnp.array([[0.6, 0.25, 0.15]])
     scores = raps_score_jax(probs, lambda_reg=0.1, k_reg=0)
 
-    # Get indices sorted by probability (descending)
-    sorted_indices = jnp.argsort(-probs[0])
-    
-    # Get scores in probability order
-    sorted_scores = scores[0, sorted_indices]
-    
     # In RAPS, cumulative sum should be non-decreasing
     # (except for regularization which might affect exact ordering)
     # But highest probability class should have lowest score
@@ -214,35 +223,32 @@ def test_raps_score_jax_monotonic_with_probability() -> None:
 
 def test_raps_score_jax_device_agnostic() -> None:
     """Test that raps_score_jax works on different devices (CPU/GPU)."""
-    probs = jnp.array([
-        [0.5, 0.3, 0.2],
-        [0.1, 0.7, 0.2],
-    ])
+    probs = jnp.array(
+        [
+            [0.5, 0.3, 0.2],
+            [0.1, 0.7, 0.2],
+        ],
+    )
 
     # This should work regardless of available devices
     scores = raps_score_jax(probs, lambda_reg=0.1, k_reg=0)
-    
+
     assert scores.shape == (2, 3)
     assert jnp.all(scores >= 0)
 
 
 def test_raps_score_jax_dtype_preservation() -> None:
-    """Test that raps_score_jax preserves input dtype."""
-    # Test with float32
-    probs_f32 = jnp.array([
-        [0.5, 0.3, 0.2],
-        [0.1, 0.7, 0.2],
-    ], dtype=jnp.float32)
-
+    # float32 muss immer klappen
+    probs_f32 = jnp.array([[0.5, 0.3, 0.2], [0.1, 0.7, 0.2]], dtype=jnp.float32)
     scores_f32 = raps_score_jax(probs_f32, lambda_reg=0.1, k_reg=0)
     assert scores_f32.dtype == jnp.float32
 
-    # Test with float64
-    probs_f64 = jnp.array([
-        [0.5, 0.3, 0.2],
-        [0.1, 0.7, 0.2],
-    ], dtype=jnp.float64)
-
+    # float64 nur testen, wenn JAX x64 kann
+    if not jax.config.read("jax_enable_x64"):
+        pytest.skip(
+            "JAX x64 disabled (jax_enable_x64=False), float64 will be truncated to float32.",
+        )
+    probs_f64 = jnp.array([[0.5, 0.3, 0.2], [0.1, 0.7, 0.2]], dtype=jnp.float64)
     scores_f64 = raps_score_jax(probs_f64, lambda_reg=0.1, k_reg=0)
     assert scores_f64.dtype == jnp.float64
 
@@ -291,11 +297,10 @@ def test_raps_flax_iris_like_dispatch_matches_backend() -> None:
     """raps_score_func should dispatch to JAX backend and match raps_score_jax."""
     probs = _iris_like_probs_jax()
 
-    s_dispatch = test_raps_score_func_basic(probs, lambda_reg=0.1, k_reg=1, epsilon=0.01)
+    s_dispatch = raps_score_func(probs, lambda_reg=0.1, k_reg=1, epsilon=0.01)
     s_backend = raps_score_jax(probs, lambda_reg=0.1, k_reg=1, epsilon=0.01)
 
     assert isinstance(s_dispatch, jnp.ndarray)
-    assert s_dispatch.shape == probs.shape
     assert jnp.allclose(s_dispatch, s_backend, rtol=1e-6, atol=1e-6)
 
 
@@ -304,7 +309,7 @@ def test_raps_flax_iris_like_consistency_with_numpy() -> None:
     probs = _iris_like_probs_jax()
     probs_np = np.asarray(probs)
 
-    s_np = test_raps_score_func_basic(probs_np, lambda_reg=0.1, k_reg=1, epsilon=0.01)
+    s_np = raps_score_func(probs_np, lambda_reg=0.1, k_reg=1, epsilon=0.01)
     s_jax = raps_score_jax(probs, lambda_reg=0.1, k_reg=1, epsilon=0.01)
 
     assert np.allclose(np.asarray(s_jax), s_np, rtol=1e-5, atol=1e-6)

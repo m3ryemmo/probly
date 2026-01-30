@@ -5,16 +5,18 @@ from __future__ import annotations
 import numpy as np
 import torch
 
-from probly.conformal_prediction.scores.raps.common import test_raps_score_func_basic
+from probly.conformal_prediction.scores.raps.common import raps_score_func
 from probly.conformal_prediction.scores.raps.torch import raps_score_torch
 
 
 def test_raps_score_torch_basic() -> None:
     """Test raps_score_torch with basic data."""
-    probs = torch.tensor([
-        [0.5, 0.3, 0.2],
-        [0.1, 0.7, 0.2],
-    ])
+    probs = torch.tensor(
+        [
+            [0.5, 0.3, 0.2],
+            [0.1, 0.7, 0.2],
+        ],
+    )
 
     scores = raps_score_torch(probs, lambda_reg=0.1, k_reg=0)
 
@@ -27,16 +29,15 @@ def test_raps_score_torch_basic() -> None:
 def test_raps_score_torch_consistency_with_numpy() -> None:
     """Test that Torch implementation produces similar results to NumPy."""
     # Create test data
-    np_probs = np.array([
-        [0.4, 0.3, 0.3],
-        [0.6, 0.2, 0.2],
-        [0.1, 0.8, 0.1],
-    ])
+    np_probs = np.array(
+        [
+            [0.4, 0.3, 0.3],
+            [0.6, 0.2, 0.2],
+            [0.1, 0.8, 0.1],
+        ],
+    )
     torch_probs = torch.tensor(np_probs)
 
-    # Get scores from both implementations
-    from probly.conformal_prediction.scores.raps.common import raps_score_func
-    
     np_scores = raps_score_func(np_probs, lambda_reg=0.1, k_reg=0)
     torch_scores = raps_score_torch(torch_probs, lambda_reg=0.1, k_reg=0)
 
@@ -50,10 +51,12 @@ def test_raps_score_torch_consistency_with_numpy() -> None:
 
 def test_raps_score_torch_different_lambda() -> None:
     """Test raps_score_torch with different regularization parameters."""
-    probs = torch.tensor([
-        [0.5, 0.3, 0.2],
-        [0.1, 0.7, 0.2],
-    ])
+    probs = torch.tensor(
+        [
+            [0.5, 0.3, 0.2],
+            [0.1, 0.7, 0.2],
+        ],
+    )
 
     scores_lambda_01 = raps_score_torch(probs, lambda_reg=0.1, k_reg=0)
     scores_lambda_10 = raps_score_torch(probs, lambda_reg=1.0, k_reg=0)
@@ -66,10 +69,12 @@ def test_raps_score_torch_different_lambda() -> None:
 
 def test_raps_score_torch_different_k_reg() -> None:
     """Test raps_score_torch with different k_reg values."""
-    probs = torch.tensor([
-        [0.5, 0.3, 0.2],
-        [0.1, 0.7, 0.2],
-    ])
+    probs = torch.tensor(
+        [
+            [0.5, 0.3, 0.2],
+            [0.1, 0.7, 0.2],
+        ],
+    )
 
     scores_k0 = raps_score_torch(probs, lambda_reg=0.1, k_reg=0)
     scores_k1 = raps_score_torch(probs, lambda_reg=0.1, k_reg=1)
@@ -82,10 +87,12 @@ def test_raps_score_torch_different_k_reg() -> None:
 
 def test_raps_score_torch_with_epsilon() -> None:
     """Test raps_score_torch with epsilon parameter."""
-    probs = torch.tensor([
-        [0.5, 0.3, 0.2],
-        [0.1, 0.7, 0.2],
-    ])
+    probs = torch.tensor(
+        [
+            [0.5, 0.3, 0.2],
+            [0.1, 0.7, 0.2],
+        ],
+    )
 
     scores_no_eps = raps_score_torch(probs, lambda_reg=0.1, k_reg=0, epsilon=0.0)
     scores_with_eps = raps_score_torch(probs, lambda_reg=0.1, k_reg=0, epsilon=0.01)
@@ -99,19 +106,22 @@ def test_raps_score_torch_with_epsilon() -> None:
 
 def test_raps_score_torch_gradient_computation() -> None:
     """Test that raps_score_torch supports gradient computation."""
-    probs = torch.tensor([
-        [0.5, 0.3, 0.2],
-        [0.1, 0.7, 0.2],
-    ], requires_grad=True)
+    probs = torch.tensor(
+        [
+            [0.5, 0.3, 0.2],
+            [0.1, 0.7, 0.2],
+        ],
+        requires_grad=True,
+    )
 
     scores = raps_score_torch(probs, lambda_reg=0.1, k_reg=0)
-    
+
     # Create a dummy loss
     loss = torch.sum(scores)
-    
+
     # Compute gradients
     loss.backward()
-    
+
     # Check gradients were computed
     assert probs.grad is not None
     assert probs.grad.shape == probs.shape
@@ -121,11 +131,13 @@ def test_raps_score_torch_gradient_computation() -> None:
 
 def test_raps_score_torch_batch_independence() -> None:
     """Test that scores are computed independently per sample."""
-    probs = torch.tensor([
-        [0.5, 0.3, 0.2],
-        [0.1, 0.7, 0.2],
-        [0.3, 0.3, 0.4],
-    ])
+    probs = torch.tensor(
+        [
+            [0.5, 0.3, 0.2],
+            [0.1, 0.7, 0.2],
+            [0.3, 0.3, 0.4],
+        ],
+    )
 
     # Compute scores for all samples
     all_scores = raps_score_torch(probs, lambda_reg=0.1, k_reg=0)
@@ -133,7 +145,7 @@ def test_raps_score_torch_batch_independence() -> None:
     # Compute scores for each sample individually
     individual_scores = []
     for i in range(probs.shape[0]):
-        single_probs = probs[i:i+1, :]  # Keep batch dimension
+        single_probs = probs[i : i + 1, :]  # Keep batch dimension
         single_scores = raps_score_torch(single_probs, lambda_reg=0.1, k_reg=0)
         individual_scores.append(single_scores[0])  # Remove batch dimension
 
@@ -146,10 +158,12 @@ def test_raps_score_torch_batch_independence() -> None:
 
 def test_raps_score_torch_device_agnostic() -> None:
     """Test that raps_score_torch works on different devices."""
-    probs = torch.tensor([
-        [0.5, 0.3, 0.2],
-        [0.1, 0.7, 0.2],
-    ])
+    probs = torch.tensor(
+        [
+            [0.5, 0.3, 0.2],
+            [0.1, 0.7, 0.2],
+        ],
+    )
 
     # Test on CPU (always available)
     scores_cpu = raps_score_torch(probs, lambda_reg=0.1, k_reg=0)
@@ -201,19 +215,25 @@ def test_raps_score_torch_large_batch() -> None:
 def test_raps_score_torch_dtype_preservation() -> None:
     """Test that raps_score_torch preserves input dtype."""
     # Test with float32
-    probs_f32 = torch.tensor([
-        [0.5, 0.3, 0.2],
-        [0.1, 0.7, 0.2],
-    ], dtype=torch.float32)
+    probs_f32 = torch.tensor(
+        [
+            [0.5, 0.3, 0.2],
+            [0.1, 0.7, 0.2],
+        ],
+        dtype=torch.float32,
+    )
 
     scores_f32 = raps_score_torch(probs_f32, lambda_reg=0.1, k_reg=0)
     assert scores_f32.dtype == torch.float32
 
     # Test with float64
-    probs_f64 = torch.tensor([
-        [0.5, 0.3, 0.2],
-        [0.1, 0.7, 0.2],
-    ], dtype=torch.float64)
+    probs_f64 = torch.tensor(
+        [
+            [0.5, 0.3, 0.2],
+            [0.1, 0.7, 0.2],
+        ],
+        dtype=torch.float64,
+    )
 
     scores_f64 = raps_score_torch(probs_f64, lambda_reg=0.1, k_reg=0)
     assert scores_f64.dtype == torch.float64
@@ -226,10 +246,7 @@ def test_raps_score_torch_monotonic_with_probability() -> None:
 
     # Get indices sorted by probability (descending)
     _, sorted_indices = torch.sort(probs[0], descending=True)
-    
-    # Get scores in probability order
-    sorted_scores = scores[0, sorted_indices]
-    
+
     # In RAPS, cumulative sum should be non-decreasing
     # But highest probability class should have lowest score
     assert scores[0, 0] <= scores[0, 1]  # 0.6 vs 0.25
@@ -238,10 +255,12 @@ def test_raps_score_torch_monotonic_with_probability() -> None:
 
 def test_raps_score_torch_deterministic() -> None:
     """Test that raps_score_torch is deterministic."""
-    probs = torch.tensor([
-        [0.5, 0.3, 0.2],
-        [0.1, 0.7, 0.2],
-    ])
+    probs = torch.tensor(
+        [
+            [0.5, 0.3, 0.2],
+            [0.1, 0.7, 0.2],
+        ],
+    )
 
     scores1 = raps_score_torch(probs, lambda_reg=0.1, k_reg=0)
     scores2 = raps_score_torch(probs, lambda_reg=0.1, k_reg=0)
@@ -251,10 +270,12 @@ def test_raps_score_torch_deterministic() -> None:
 
 def test_raps_score_torch_zeros_input() -> None:
     """Test raps_score_torch with edge case of zero probabilities."""
-    probs = torch.tensor([
-        [0.0, 0.0, 1.0],  # One class has all probability
-        [0.0, 1.0, 0.0],
-    ])
+    probs = torch.tensor(
+        [
+            [0.0, 0.0, 1.0],  # One class has all probability
+            [0.0, 1.0, 0.0],
+        ],
+    )
 
     scores = raps_score_torch(probs, lambda_reg=0.1, k_reg=0)
 
@@ -270,10 +291,10 @@ def test_raps_score_torch_extreme_probabilities() -> None:
     # Very concentrated distribution
     probs_concentrated = torch.tensor([[0.99, 0.005, 0.005]])
     scores_concentrated = raps_score_torch(probs_concentrated, lambda_reg=0.1, k_reg=0)
-    
+
     assert scores_concentrated.shape == (1, 3)
     assert torch.all(scores_concentrated >= 0)
-    
+
     # Most probable class should have lowest score
     assert scores_concentrated[0, 0] <= scores_concentrated[0, 1]
     assert scores_concentrated[0, 0] <= scores_concentrated[0, 2]
@@ -320,11 +341,10 @@ def test_raps_torch_iris_like_dispatch_matches_backend() -> None:
     """raps_score_func should dispatch to Torch backend and match raps_score_torch."""
     probs = _iris_like_probs_torch()
 
-    s_dispatch = test_raps_score_func_basic(probs, lambda_reg=0.1, k_reg=1, epsilon=0.01)
+    s_dispatch = raps_score_func(probs, lambda_reg=0.1, k_reg=1, epsilon=0.01)
     s_backend = raps_score_torch(probs, lambda_reg=0.1, k_reg=1, epsilon=0.01)
 
     assert isinstance(s_dispatch, torch.Tensor)
-    assert s_dispatch.shape == probs.shape
     assert torch.allclose(s_dispatch, s_backend, rtol=1e-6, atol=1e-6)
 
 
@@ -333,7 +353,7 @@ def test_raps_torch_iris_like_consistency_with_numpy() -> None:
     probs = _iris_like_probs_torch()
     probs_np = probs.detach().cpu().numpy()
 
-    s_np = test_raps_score_func_basic(probs_np, lambda_reg=0.1, k_reg=1, epsilon=0.01)
+    s_np = raps_score_func(probs_np, lambda_reg=0.1, k_reg=1, epsilon=0.01)
     s_torch = raps_score_torch(probs, lambda_reg=0.1, k_reg=1, epsilon=0.01)
 
     assert np.allclose(s_torch.detach().cpu().numpy(), s_np, rtol=1e-5, atol=1e-6)
