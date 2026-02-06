@@ -269,3 +269,16 @@ docs/source/api
 notebooks/examples/cifar-10-batches-py/
 notebooks/examples/cifar-10-python.tar.gz
 raps_notebook_backup.ipynb
+
+# Python
+.venv/
+__pycache__/
+.mypy_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Data / Datasets
+notebooks/examples/cifar-10-python.tar.gz
+notebooks/examples/data/
+notebooks/examples/cifar-10-batches-py/
