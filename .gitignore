@@ -282,3 +282,8 @@ __pycache__/
 notebooks/examples/cifar-10-python.tar.gz
 notebooks/examples/data/
 notebooks/examples/cifar-10-batches-py/
+
+# Virtual environment
+.venv/
+venv/
+.env/
